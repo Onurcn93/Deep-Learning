@@ -64,6 +64,7 @@ class TrainingParams:
         log_interval:  Batches between training-progress prints.
         seed:          Global random seed.
         device:        Requested compute device string (e.g. ``'cuda'``, ``'cpu'``).
+        plot:          If ``True``, save training curves and confusion matrix to ``plots/``.
     """
 
     mode:          str
@@ -78,6 +79,7 @@ class TrainingParams:
     log_interval:  int
     seed:          int
     device:        str
+    plot:          bool
 
 
 def get_params() -> Tuple[DataParams, ModelParams, TrainingParams]:
@@ -94,6 +96,8 @@ def get_params() -> Tuple[DataParams, ModelParams, TrainingParams]:
     parser.add_argument("--model",   choices=["mlp", "cnn", "vgg", "resnet"], default="mlp")
     parser.add_argument("--device",  type=str,  default="cpu")
     parser.add_argument("--seed",    type=int,  default=42)
+    parser.add_argument("--plot",    action="store_true",
+                        help="Save training curves and confusion matrix to plots/")
 
     # Training
     parser.add_argument("--epochs",       type=int,   default=10)
@@ -166,6 +170,7 @@ def get_params() -> Tuple[DataParams, ModelParams, TrainingParams]:
         log_interval  = 100,
         seed          = args.seed,
         device        = args.device,
+        plot          = args.plot,
     )
 
     return data_params, model_params, training_params

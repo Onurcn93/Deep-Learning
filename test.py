@@ -1,4 +1,4 @@
-from typing import Dict
+from typing import Dict, List
 
 import torch
 import torch.nn as nn
@@ -7,6 +7,7 @@ from torchvision import datasets
 
 from train import get_transforms
 from parameters import DataParams, TrainingParams
+from plot import plot_confusion_matrix
 
 
 @torch.no_grad()
@@ -47,12 +48,16 @@ def run_test(
     correct, n  = 0, 0
     class_correct = [0] * data_params.num_classes
     class_total   = [0] * data_params.num_classes
+    all_preds:  List[int] = []
+    all_labels: List[int] = []
 
     for imgs, labels in loader:
         imgs, labels = imgs.to(device), labels.to(device)
         preds = model(imgs).argmax(1)
         correct += preds.eq(labels).sum().item()
         n       += imgs.size(0)
+        all_preds.extend(preds.cpu().tolist())
+        all_labels.extend(labels.cpu().tolist())
         for p, t in zip(preds, labels):
             class_correct[t] += (p == t).item()
             class_total[t]   += 1
@@ -64,5 +69,8 @@ def run_test(
         acc = class_correct[i] / class_total[i]
         results[str(i)] = acc
         print(f"  Class {i}: {acc:.4f}  ({class_correct[i]}/{class_total[i]})")
+
+    if training_params.plot:
+        plot_confusion_matrix(all_preds, all_labels, data_params.dataset)
 
     return results
