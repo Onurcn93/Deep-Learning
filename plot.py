@@ -22,6 +22,14 @@ def _ensure_dir(path: str) -> None:
     os.makedirs(path, exist_ok=True)
 
 
+def _title_to_filename(title: str) -> str:
+    """Convert a config title string to a safe filename suffix."""
+    import re
+    s = title.replace("×", "x").replace(" | ", "_").replace("=", "").replace(" ", "_")
+    s = re.sub(r"[^\w\-]", "", s)
+    return s
+
+
 def plot_training_curves(
     train_losses: List[float],
     val_losses:   List[float],
@@ -64,7 +72,8 @@ def plot_training_curves(
     ax2.grid(True)
 
     fig.tight_layout(rect=[0, 0, 1, 0.95] if title else [0, 0, 1, 1])
-    path = os.path.join(out_dir, "training_curves.png")
+    suffix = f"_{_title_to_filename(title)}" if title else ""
+    path = os.path.join(out_dir, f"training_curves{suffix}.png")
     fig.savefig(path, dpi=150)
     plt.close(fig)
     print(f"[plot] Saved training curves → {path}")
@@ -121,7 +130,8 @@ def plot_confusion_matrix(
         fig.suptitle(title, fontsize=10, fontweight="bold")
     fig.tight_layout(rect=[0, 0, 1, 0.95] if title else [0, 0, 1, 1])
 
-    path = os.path.join(out_dir, "confusion_matrix.png")
+    suffix = f"_{_title_to_filename(title)}" if title else ""
+    path = os.path.join(out_dir, f"confusion_matrix{suffix}.png")
     fig.savefig(path, dpi=150)
     plt.close(fig)
     print(f"[plot] Saved confusion matrix → {path}")
