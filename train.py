@@ -1,14 +1,27 @@
 import copy
+from typing import Optional, Tuple
+
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 
+from parameters import DataParams, TrainingParams
 
-def get_transforms(params, train=True):
-    mean, std = params["mean"], params["std"]
 
-    if params["dataset"] == "mnist":
+def get_transforms(data_params: DataParams, train: bool = True) -> transforms.Compose:
+    """Build a torchvision transform pipeline for a given dataset split.
+
+    Args:
+        data_params: Dataset-related parameters (dataset name, mean, std).
+        train:       If ``True``, applies training augmentations (CIFAR-10 only).
+
+    Returns:
+        A composed transform pipeline.
+    """
+    mean, std = data_params.mean, data_params.std
+
+    if data_params.dataset == "mnist":
         return transforms.Compose([
             transforms.ToTensor(),
             transforms.Normalize(mean, std),
@@ -28,25 +41,59 @@ def get_transforms(params, train=True):
             ])
 
 
-def get_loaders(params):
-    train_tf = get_transforms(params, train=True)
-    val_tf   = get_transforms(params, train=False)
+def get_loaders(
+    data_params: DataParams,
+    training_params: TrainingParams,
+) -> Tuple[DataLoader, DataLoader]:
+    """Create train and validation DataLoaders.
 
-    if params["dataset"] == "mnist":
-        train_ds = datasets.MNIST(params["data_dir"], train=True,  download=True, transform=train_tf)
-        val_ds   = datasets.MNIST(params["data_dir"], train=False, download=True, transform=val_tf)
+    Args:
+        data_params:     Dataset parameters.
+        training_params: Training parameters (batch size).
+
+    Returns:
+        Tuple of ``(train_loader, val_loader)``.
+    """
+    train_tf = get_transforms(data_params, train=True)
+    val_tf   = get_transforms(data_params, train=False)
+
+    if data_params.dataset == "mnist":
+        train_ds = datasets.MNIST(data_params.data_dir, train=True,  download=True, transform=train_tf)
+        val_ds   = datasets.MNIST(data_params.data_dir, train=False, download=True, transform=val_tf)
     else:  # cifar10
-        train_ds = datasets.CIFAR10(params["data_dir"], train=True,  download=True, transform=train_tf)
-        val_ds   = datasets.CIFAR10(params["data_dir"], train=False, download=True, transform=val_tf)
+        train_ds = datasets.CIFAR10(data_params.data_dir, train=True,  download=True, transform=train_tf)
+        val_ds   = datasets.CIFAR10(data_params.data_dir, train=False, download=True, transform=val_tf)
 
-    train_loader = DataLoader(train_ds, batch_size=params["batch_size"],
-                              shuffle=True,  num_workers=params["num_workers"])
-    val_loader   = DataLoader(val_ds,   batch_size=params["batch_size"],
-                              shuffle=False, num_workers=params["num_workers"])
+    train_loader = DataLoader(train_ds, batch_size=training_params.batch_size,
+                              shuffle=True,  num_workers=data_params.num_workers)
+    val_loader   = DataLoader(val_ds,   batch_size=training_params.batch_size,
+                              shuffle=False, num_workers=data_params.num_workers)
     return train_loader, val_loader
 
 
-def train_one_epoch(model, loader, optimizer, criterion, device, log_interval):
+def train_one_epoch(
+    model:        nn.Module,
+    loader:       DataLoader,
+    optimizer:    torch.optim.Optimizer,
+    criterion:    nn.Module,
+    device:       torch.device,
+    l1_lambda:    float,
+    log_interval: int,
+) -> Tuple[float, float]:
+    """Run one training epoch with optional L1 regularisation.
+
+    Args:
+        model:        The neural network to train.
+        loader:       Training DataLoader.
+        optimizer:    Optimiser instance.
+        criterion:    Loss function.
+        device:       Computation device.
+        l1_lambda:    L1 regularisation coefficient (0 = disabled).
+        log_interval: Batches between progress prints.
+
+    Returns:
+        Tuple of ``(mean_loss, accuracy)`` over the epoch.
+    """
     model.train()
     total_loss, correct, n = 0.0, 0, 0
     for batch_idx, (imgs, labels) in enumerate(loader):
@@ -55,6 +102,11 @@ def train_one_epoch(model, loader, optimizer, criterion, device, log_interval):
         optimizer.zero_grad()
         out  = model(imgs)
         loss = criterion(out, labels)
+
+        if l1_lambda > 0:
+            l1_norm = sum(p.abs().sum() for p in model.parameters())
+            loss = loss + l1_lambda * l1_norm
+
         loss.backward()
         optimizer.step()
 
@@ -69,7 +121,23 @@ def train_one_epoch(model, loader, optimizer, criterion, device, log_interval):
     return total_loss / n, correct / n
 
 
-def validate(model, loader, criterion, device):
+def validate(
+    model:     nn.Module,
+    loader:    DataLoader,
+    criterion: nn.Module,
+    device:    torch.device,
+) -> Tuple[float, float]:
+    """Evaluate model on a validation split.
+
+    Args:
+        model:     The neural network to evaluate.
+        loader:    Validation DataLoader.
+        criterion: Loss function.
+        device:    Computation device.
+
+    Returns:
+        Tuple of ``(mean_loss, accuracy)``.
+    """
     model.eval()
     total_loss, correct, n = 0.0, 0, 0
     with torch.no_grad():
@@ -83,23 +151,63 @@ def validate(model, loader, criterion, device):
     return total_loss / n, correct / n
 
 
-def run_training(model, params, device):
-    train_loader, val_loader = get_loaders(params)
+def build_scheduler(
+    optimizer:       torch.optim.Optimizer,
+    training_params: TrainingParams,
+) -> Optional[torch.optim.lr_scheduler.LRScheduler]:
+    """Instantiate an LR scheduler based on training parameters.
+
+    Args:
+        optimizer:       The optimiser whose LR will be scheduled.
+        training_params: Training parameters (scheduler type, epochs).
+
+    Returns:
+        An ``LRScheduler`` instance, or ``None`` if scheduler is ``'none'``.
+    """
+    if training_params.scheduler == "step":
+        return torch.optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.5)
+    if training_params.scheduler == "cosine":
+        return torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=training_params.epochs)
+    return None
+
+
+def run_training(
+    model:           nn.Module,
+    data_params:     DataParams,
+    training_params: TrainingParams,
+    device:          torch.device,
+) -> None:
+    """Full training loop with early stopping, LR scheduling, and best-model saving.
+
+    Args:
+        model:           The neural network to train.
+        data_params:     Dataset parameters.
+        training_params: Training hyperparameters.
+        device:          Computation device.
+    """
+    train_loader, val_loader = get_loaders(data_params, training_params)
     criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.Adam(model.parameters(),
-                                 lr=params["learning_rate"],
-                                 weight_decay=params["weight_decay"])
-    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.5)
+    optimizer = torch.optim.Adam(
+        model.parameters(),
+        lr           = training_params.learning_rate,
+        weight_decay = training_params.weight_decay,
+    )
+    scheduler = build_scheduler(optimizer, training_params)
 
-    best_acc     = 0.0
-    best_weights = None
+    best_acc      = 0.0
+    best_weights  = None
+    patience_ctr  = 0
 
-    for epoch in range(1, params["epochs"] + 1):
-        print(f"\nEpoch {epoch}/{params['epochs']}")
-        tr_loss, tr_acc = train_one_epoch(model, train_loader, optimizer,
-                                          criterion, device, params["log_interval"])
+    for epoch in range(1, training_params.epochs + 1):
+        print(f"\nEpoch {epoch}/{training_params.epochs}")
+        tr_loss, tr_acc = train_one_epoch(
+            model, train_loader, optimizer, criterion, device,
+            training_params.l1_lambda, training_params.log_interval,
+        )
         val_loss, val_acc = validate(model, val_loader, criterion, device)
-        scheduler.step()
+
+        if scheduler is not None:
+            scheduler.step()
 
         print(f"  Train loss: {tr_loss:.4f}  acc: {tr_acc:.4f}")
         print(f"  Val   loss: {val_loss:.4f}  acc: {val_acc:.4f}")
@@ -107,8 +215,17 @@ def run_training(model, params, device):
         if val_acc > best_acc:
             best_acc     = val_acc
             best_weights = copy.deepcopy(model.state_dict())
-            torch.save(best_weights, params["save_path"])
+            torch.save(best_weights, training_params.save_path)
             print(f"  Saved best model (val_acc={best_acc:.4f})")
+            patience_ctr = 0
+        else:
+            patience_ctr += 1
 
-    model.load_state_dict(best_weights)
+        if training_params.patience > 0 and patience_ctr >= training_params.patience:
+            print(f"\nEarly stopping triggered after {epoch} epochs "
+                  f"(patience={training_params.patience})")
+            break
+
+    if best_weights is not None:
+        model.load_state_dict(best_weights)
     print(f"\nTraining done. Best val accuracy: {best_acc:.4f}")

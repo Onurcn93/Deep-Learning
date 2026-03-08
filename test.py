@@ -1,28 +1,52 @@
+from typing import Dict
+
 import torch
+import torch.nn as nn
 from torch.utils.data import DataLoader
-from torchvision import datasets, transforms
+from torchvision import datasets
 
 from train import get_transforms
+from parameters import DataParams, TrainingParams
 
 
 @torch.no_grad()
-def run_test(model, params, device):
-    tf = get_transforms(params, train=False)
+def run_test(
+    model:           nn.Module,
+    data_params:     DataParams,
+    training_params: TrainingParams,
+    device:          torch.device,
+) -> Dict[str, float]:
+    """Evaluate a trained model on the test split and print per-class accuracy.
 
-    if params["dataset"] == "mnist":
-        test_ds = datasets.MNIST(params["data_dir"], train=False, download=True, transform=tf)
+    Loads the best saved weights from ``training_params.save_path`` before
+    running evaluation.
+
+    Args:
+        model:           The neural network to evaluate.
+        data_params:     Dataset parameters used to load test data.
+        training_params: Training parameters (save path, batch size).
+        device:          Computation device.
+
+    Returns:
+        Dictionary with key ``'overall'`` and per-class string keys mapped to
+        accuracy values.
+    """
+    tf = get_transforms(data_params, train=False)
+
+    if data_params.dataset == "mnist":
+        test_ds = datasets.MNIST(data_params.data_dir, train=False, download=True, transform=tf)
     else:  # cifar10
-        test_ds = datasets.CIFAR10(params["data_dir"], train=False, download=True, transform=tf)
+        test_ds = datasets.CIFAR10(data_params.data_dir, train=False, download=True, transform=tf)
 
-    loader = DataLoader(test_ds, batch_size=params["batch_size"],
-                        shuffle=False, num_workers=params["num_workers"])
+    loader = DataLoader(test_ds, batch_size=training_params.batch_size,
+                        shuffle=False, num_workers=data_params.num_workers)
 
-    model.load_state_dict(torch.load(params["save_path"], map_location=device))
+    model.load_state_dict(torch.load(training_params.save_path, map_location=device))
     model.eval()
 
-    correct, n = 0, 0
-    class_correct = [0] * params["num_classes"]
-    class_total   = [0] * params["num_classes"]
+    correct, n  = 0, 0
+    class_correct = [0] * data_params.num_classes
+    class_total   = [0] * data_params.num_classes
 
     for imgs, labels in loader:
         imgs, labels = imgs.to(device), labels.to(device)
@@ -33,8 +57,12 @@ def run_test(model, params, device):
             class_correct[t] += (p == t).item()
             class_total[t]   += 1
 
+    results: Dict[str, float] = {"overall": correct / n}
     print(f"\n=== Test Results ===")
     print(f"Overall accuracy: {correct/n:.4f}  ({correct}/{n})\n")
-    for i in range(params["num_classes"]):
+    for i in range(data_params.num_classes):
         acc = class_correct[i] / class_total[i]
+        results[str(i)] = acc
         print(f"  Class {i}: {acc:.4f}  ({class_correct[i]}/{class_total[i]})")
+
+    return results
