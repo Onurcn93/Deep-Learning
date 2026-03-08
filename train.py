@@ -177,6 +177,7 @@ def run_training(
     data_params:     DataParams,
     training_params: TrainingParams,
     device:          torch.device,
+    config_title:    str = "",
 ) -> None:
     """Full training loop with early stopping, LR scheduling, and best-model saving.
 
@@ -242,4 +243,4 @@ def run_training(
     print(f"\nTraining done. Best val accuracy: {best_acc:.4f}")
 
     if training_params.plot:
-        plot_training_curves(train_losses, val_losses, train_accs, val_accs)
+        plot_training_curves(train_losses, val_losses, train_accs, val_accs, title=config_title)

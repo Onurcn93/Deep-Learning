@@ -79,6 +79,37 @@ def build_model(
     raise ValueError(f"Unknown model: {name}")
 
 
+def build_config_title(
+    data_params:     DataParams,
+    model_params:    ModelParams,
+    training_params: TrainingParams,
+) -> str:
+    """Build a short human-readable title describing the current experiment setup."""
+    name = model_params.model
+    parts = []
+
+    if name == "mlp":
+        arch = "\u00d7".join(str(h) for h in model_params.hidden_sizes)
+        parts.append(f"MLP {arch}")
+        parts.append(f"drop={model_params.dropout}")
+        parts.append(model_params.activation)
+    elif name == "cnn":
+        parts.append("CNN")
+    elif name == "vgg":
+        parts.append(f"VGG-{model_params.vgg_depth}")
+    elif name == "resnet":
+        parts.append(f"ResNet {model_params.resnet_layers}")
+
+    parts.append(data_params.dataset)
+    parts.append(f"lr={training_params.learning_rate}")
+    parts.append(f"bs={training_params.batch_size}")
+    parts.append(f"sched={training_params.scheduler}")
+    if training_params.weight_decay > 0:
+        parts.append(f"wd={training_params.weight_decay}")
+
+    return " | ".join(parts)
+
+
 def main() -> None:
     """Entry point: parse parameters, build model, run training and/or testing."""
     data_params, model_params, training_params = get_params()
@@ -97,11 +128,13 @@ def main() -> None:
     model = build_model(data_params, model_params).to(device)
     print(model)
 
+    config_title = build_config_title(data_params, model_params, training_params)
+
     if training_params.mode in ("train", "both"):
-        run_training(model, data_params, training_params, device)
+        run_training(model, data_params, training_params, device, config_title)
 
     if training_params.mode in ("test", "both"):
-        run_test(model, data_params, training_params, device)
+        run_test(model, data_params, training_params, device, config_title)
 
 
 if __name__ == "__main__":

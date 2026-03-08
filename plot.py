@@ -28,6 +28,7 @@ def plot_training_curves(
     train_accs:   List[float],
     val_accs:     List[float],
     out_dir:      str = PLOTS_DIR,
+    title:        str = "",
 ) -> None:
     """Save loss and accuracy curves over epochs.
 
@@ -37,11 +38,14 @@ def plot_training_curves(
         train_accs:   Training accuracy per epoch.
         val_accs:     Validation accuracy per epoch.
         out_dir:      Directory to save the figure.
+        title:        Overall figure title describing the training setup.
     """
     _ensure_dir(out_dir)
     epochs = range(1, len(train_losses) + 1)
 
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+    if title:
+        fig.suptitle(title, fontsize=10, fontweight="bold")
 
     ax1.plot(epochs, train_losses, label="Train", marker="o", markersize=3)
     ax1.plot(epochs, val_losses,   label="Val",   marker="o", markersize=3)
@@ -59,7 +63,7 @@ def plot_training_curves(
     ax2.legend()
     ax2.grid(True)
 
-    fig.tight_layout()
+    fig.tight_layout(rect=[0, 0, 1, 0.95] if title else [0, 0, 1, 1])
     path = os.path.join(out_dir, "training_curves.png")
     fig.savefig(path, dpi=150)
     plt.close(fig)
@@ -71,6 +75,7 @@ def plot_confusion_matrix(
     all_labels: List[int],
     dataset:    str,
     out_dir:    str = PLOTS_DIR,
+    title:      str = "",
 ) -> None:
     """Save a confusion matrix heatmap.
 
@@ -79,6 +84,7 @@ def plot_confusion_matrix(
         all_labels: Flat list of ground-truth class indices.
         dataset:    Dataset name (``'mnist'`` or ``'cifar10'``).
         out_dir:    Directory to save the figure.
+        title:      Overall figure title describing the training setup.
     """
     _ensure_dir(out_dir)
 
@@ -111,7 +117,9 @@ def plot_confusion_matrix(
     ax.set_xlabel("Predicted")
     ax.set_ylabel("True")
     ax.set_title("Confusion Matrix")
-    fig.tight_layout()
+    if title:
+        fig.suptitle(title, fontsize=10, fontweight="bold")
+    fig.tight_layout(rect=[0, 0, 1, 0.95] if title else [0, 0, 1, 1])
 
     path = os.path.join(out_dir, "confusion_matrix.png")
     fig.savefig(path, dpi=150)

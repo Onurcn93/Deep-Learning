@@ -16,6 +16,7 @@ def run_test(
     data_params:     DataParams,
     training_params: TrainingParams,
     device:          torch.device,
+    config_title:    str = "",
 ) -> Dict[str, float]:
     """Evaluate a trained model on the test split and print per-class accuracy.
 
@@ -71,6 +72,6 @@ def run_test(
         print(f"  Class {i}: {acc:.4f}  ({class_correct[i]}/{class_total[i]})")
 
     if training_params.plot:
-        plot_confusion_matrix(all_preds, all_labels, data_params.dataset)
+        plot_confusion_matrix(all_preds, all_labels, data_params.dataset, title=config_title)
 
     return results
