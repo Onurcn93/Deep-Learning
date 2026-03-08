@@ -3,7 +3,8 @@
 ```markdown
 # Deep Learning Framework
 
-A personal PyTorch framework for training and evaluating deep learning models on image classification benchmarks. Built to be extended with new architectures over time.
+A personal PyTorch framework for training and evaluating deep learning models on image classification
+benchmarks. Built to be extended with new architectures over time.
 
 ---
 
