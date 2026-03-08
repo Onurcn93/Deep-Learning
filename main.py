@@ -1,9 +1,11 @@
 import random
 import ssl
+
 import numpy as np
 import torch
+import torch.nn as nn
 
-from parameters import get_params
+from parameters import get_params, DataParams, ModelParams, TrainingParams
 from models.MLP import MLP
 from models.CNN import MNIST_CNN, SimpleCNN
 from models.VGG import VGG
@@ -16,70 +18,90 @@ from test  import run_test
 ssl._create_default_https_context = ssl._create_unverified_context
 
 
-def set_seed(seed):
+def set_seed(seed: int) -> None:
+    """Set random seeds for reproducibility across all relevant libraries.
+
+    Args:
+        seed: Integer seed value.
+    """
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
-    torch.backends.cudnn.benchmark = False
+    torch.backends.cudnn.benchmark     = False
 
 
-def build_model(params):
-    model_name = params["model"]
-    dataset    = params["dataset"]
-    nc         = params["num_classes"]
+def build_model(
+    data_params:  DataParams,
+    model_params: ModelParams,
+) -> nn.Module:
+    """Instantiate the requested model architecture.
 
-    if model_name == "mlp":
+    Args:
+        data_params:  Dataset parameters (input size, num classes, dataset name).
+        model_params: Architecture parameters.
+
+    Returns:
+        An ``nn.Module`` instance ready for training.
+
+    Raises:
+        ValueError: If the model/dataset combination is unsupported.
+    """
+    name = model_params.model
+    nc   = data_params.num_classes
+
+    if name == "mlp":
         return MLP(
-            input_size   = params["input_size"],
-            hidden_sizes = params["hidden_sizes"],
+            input_size   = data_params.input_size,
+            hidden_sizes = model_params.hidden_sizes,
             num_classes  = nc,
-            dropout      = params["dropout"],
+            dropout      = model_params.dropout,
+            activation   = model_params.activation,
         )
 
-    if model_name == "cnn":
+    if name == "cnn":
         # MNIST_CNN expects 1-channel 28×28; SimpleCNN expects 3-channel 32×32
-        if dataset == "mnist":
+        if data_params.dataset == "mnist":
             return MNIST_CNN(num_classes=nc)
-        else:
-            return SimpleCNN(num_classes=nc)
+        return SimpleCNN(num_classes=nc)
 
-    if model_name == "vgg":
-        if dataset == "mnist":
+    if name == "vgg":
+        if data_params.dataset == "mnist":
             raise ValueError("VGG is designed for 3-channel images; use cifar10 with vgg.")
-        return VGG(dept=params["vgg_depth"], num_class=nc)
+        return VGG(dept=model_params.vgg_depth, num_class=nc)
 
-    if model_name == "resnet":
-        if dataset == "mnist":
+    if name == "resnet":
+        if data_params.dataset == "mnist":
             raise ValueError("ResNet is designed for 3-channel images; use cifar10 with resnet.")
-        return ResNet(BasicBlock, params["resnet_layers"], num_classes=nc)
+        return ResNet(BasicBlock, model_params.resnet_layers, num_classes=nc)
 
-    raise ValueError(f"Unknown model: {model_name}")
+    raise ValueError(f"Unknown model: {name}")
 
 
-def main():
-    params = get_params()
+def main() -> None:
+    """Entry point: parse parameters, build model, run training and/or testing."""
+    data_params, model_params, training_params = get_params()
 
-    set_seed(params["seed"])
-    print(f"Seed set to: {params['seed']}")
-    print(f"Dataset: {params['dataset']}  |  Model: {params['model']}")
+    set_seed(training_params.seed)
+    print(f"Seed set to: {training_params.seed}")
+    print(f"Dataset: {data_params.dataset}  |  Model: {model_params.model}")
 
     device = torch.device(
-        params["device"] if torch.cuda.is_available() else
+        training_params.device if torch.cuda.is_available() else
         "mps" if torch.backends.mps.is_available() else
         "cpu"
     )
     print(f"Using device: {device}")
 
-    model = build_model(params).to(device)
+    model = build_model(data_params, model_params).to(device)
     print(model)
 
-    if params["mode"] in ("train", "both"):
-        run_training(model, params, device)
+    if training_params.mode in ("train", "both"):
+        run_training(model, data_params, training_params, device)
 
-    if params["mode"] in ("test", "both"):
-        run_test(model, params, device)
+    if training_params.mode in ("test", "both"):
+        run_test(model, data_params, training_params, device)
 
 
 if __name__ == "__main__":
