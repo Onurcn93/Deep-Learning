@@ -1,5 +1,5 @@
 import copy
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
 
 import torch
 import torch.nn as nn
@@ -7,6 +7,7 @@ from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 
 from parameters import DataParams, TrainingParams
+from plot import plot_training_curves
 
 
 def get_transforms(data_params: DataParams, train: bool = True) -> transforms.Compose:
@@ -198,6 +199,11 @@ def run_training(
     best_weights  = None
     patience_ctr  = 0
 
+    train_losses: List[float] = []
+    val_losses:   List[float] = []
+    train_accs:   List[float] = []
+    val_accs:     List[float] = []
+
     for epoch in range(1, training_params.epochs + 1):
         print(f"\nEpoch {epoch}/{training_params.epochs}")
         tr_loss, tr_acc = train_one_epoch(
@@ -205,6 +211,11 @@ def run_training(
             training_params.l1_lambda, training_params.log_interval,
         )
         val_loss, val_acc = validate(model, val_loader, criterion, device)
+
+        train_losses.append(tr_loss)
+        val_losses.append(val_loss)
+        train_accs.append(tr_acc)
+        val_accs.append(val_acc)
 
         if scheduler is not None:
             scheduler.step()
@@ -229,3 +240,6 @@ def run_training(
     if best_weights is not None:
         model.load_state_dict(best_weights)
     print(f"\nTraining done. Best val accuracy: {best_acc:.4f}")
+
+    if training_params.plot:
+        plot_training_curves(train_losses, val_losses, train_accs, val_accs)
