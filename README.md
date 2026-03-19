@@ -3,6 +3,10 @@
 A personal PyTorch framework for training and evaluating deep learning models on image classification
 benchmarks. Built to be extended with new architectures over time.
 
+## Acknowledgments
+
+This repository structure and implementation logic are based on the [Deep Learning Tutorial](https://github.com/SU-Intelligent-systems-Lab/Deep-learning) by the Sabancı University (SU) Intelligent Systems Lab.
+
 ---
 
 ## Supported Models
@@ -136,3 +140,5 @@ Deep-Learning/
 - matplotlib
 - seaborn *(optional, for nicer confusion matrix)*
 ```
+
+
