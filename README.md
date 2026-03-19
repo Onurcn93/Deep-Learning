@@ -17,6 +17,8 @@ This repository structure and implementation logic are based on the [Deep Learni
 | CNN | `--model cnn` | MNIST, CIFAR-10 | LeNet-style (MNIST) / SimpleCNN with Kaiming init (CIFAR-10) |
 | VGG | `--model vgg` | CIFAR-10 | VGG-11/13/16/19 with BatchNorm |
 | ResNet | `--model resnet` | CIFAR-10 | Configurable blocks (default: ResNet-18) |
+| ResNet-18 pretrained | `--transfer_mode resizeFreeze` | CIFAR-10 | ImageNet weights, resize to 224, frozen backbone, FC only |
+| ResNet-18 pretrained | `--transfer_mode modifyFinetune` | CIFAR-10 | ImageNet weights, adapted conv1 for 32×32, full fine-tune |
 
 ---
 
@@ -26,9 +28,10 @@ This repository structure and implementation logic are based on the [Deep Learni
 - **Training utilities**: Adam optimizer, L1 + L2 regularization, early stopping
 - **LR schedulers**: StepLR, CosineAnnealingLR
 - **Reproducibility**: global seed for `random`, `numpy`, `torch`, and `cudnn`
-- **GPU support**: CUDA / MPS / CPU auto-detection
+- **GPU support**: CUDA / MPS / CPU auto-detection (`--device auto`)
 - **Plotting** (`--plot`): saves training curves and confusion matrix to `plots/`
-- **Pretrained models**: `pretrained.py` for fine-tuning torchvision models
+- **Structured logger** (`--log`): formatted epoch table saved to `logs/`
+- **Transfer learning**: ResNet-18 pretrained with freeze or full fine-tune modes
 
 ---
 
@@ -60,7 +63,9 @@ python main.py --mode both --dataset mnist --model mlp
 | `--mode` | `both` | `train`, `test`, or `both` |
 | `--dataset` | `mnist` | `mnist` or `cifar10` |
 | `--model` | `mlp` | `mlp`, `cnn`, `vgg`, `resnet` |
-| `--device` | `cpu` | `cuda`, `mps`, or `cpu` |
+| `--device` | `auto` | `auto`, `cuda`, `mps`, or `cpu` |
+| `--transfer_mode` | `none` | `none`, `resizeFreeze`, `modifyFinetune` |
+| `--log` / `--no-log` | `True` | Save training log to `logs/` |
 | `--epochs` | `10` | Number of training epochs |
 | `--lr` | `1e-3` | Learning rate |
 | `--batch_size` | `64` | Mini-batch size |
@@ -97,16 +102,24 @@ python main.py --mode both --dataset mnist --model mlp
 ```bash
 # MLP on MNIST with GPU and plots
 python main.py --mode both --dataset mnist --model mlp \
-               --epochs 20 --lr 1e-3 --device cuda --plot
+               --epochs 20 --lr 1e-3 --plot
 
 # ResNet-18 on CIFAR-10 with cosine scheduler and early stopping
 python main.py --mode both --dataset cifar10 --model resnet \
                --epochs 50 --lr 1e-3 --scheduler cosine \
-               --patience 10 --device cuda --plot
+               --patience 10 --plot
 
 # VGG-16 on CIFAR-10
 python main.py --mode both --dataset cifar10 --model vgg \
-               --vgg_depth 16 --epochs 30 --device cuda --plot
+               --vgg_depth 16 --epochs 30 --plot
+
+# Transfer learning — freeze backbone, train FC only (resize CIFAR to 224)
+python main.py --dataset cifar10 --transfer_mode resizeFreeze \
+               --epochs 10 --batch_size 128 --plot --log
+
+# Transfer learning — adapt first conv for 32x32, fine-tune all layers
+python main.py --dataset cifar10 --transfer_mode modifyFinetune \
+               --epochs 10 --batch_size 128 --lr 1e-4 --plot --log
 ```
 
 ---
@@ -115,12 +128,14 @@ python main.py --mode both --dataset cifar10 --model vgg \
 
 ```
 Deep-Learning/
-├── main.py           # Entry point: argument parsing, model build, train/test dispatch
-├── train.py          # Training loop, validation, LR schedulers, data loaders
+├── main.py           # Entry point: model build, transfer learning, train/test dispatch
+├── train.py          # Training loop, validation, LR schedulers, data loaders, transforms
 ├── test.py           # Test evaluation with per-class accuracy
 ├── plot.py           # Training curves and confusion matrix (saved to plots/)
+├── logger.py         # Structured epoch table logger (terminal + logs/)
 ├── parameters.py     # Dataclasses and argparse for all hyperparameters
-├── pretrained.py     # Fine-tuning with torchvision pretrained models
+├── pretrained.py     # Standalone pretrained ResNet-18 eval script
+├── NN_Visualizer.py  # torchviz architecture graph for MLP
 ├── models/
 │   ├── MLP.py        # Multi-Layer Perceptron
 │   ├── CNN.py        # LeNet-style CNN (MNIST) / SimpleCNN (CIFAR-10)
