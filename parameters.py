@@ -45,6 +45,7 @@ class ModelParams:
     activation:    str
     vgg_depth:     str
     resnet_layers: List[int]
+    transfer_mode: str   # 'none' | 'resizeFreeze' | 'modifyFinetune'
 
 
 @dataclass
@@ -95,7 +96,7 @@ def get_params() -> Tuple[DataParams, ModelParams, TrainingParams]:
     parser.add_argument("--mode",    choices=["train", "test", "both"], default="both")
     parser.add_argument("--dataset", choices=["mnist", "cifar10"],      default="mnist")
     parser.add_argument("--model",   choices=["mlp", "cnn", "vgg", "resnet"], default="mlp")
-    parser.add_argument("--device",  type=str,  default="cpu")
+    parser.add_argument("--device",  type=str,  default="auto", help="Device: auto detects cuda/mps/cpu, or specify explicitly")
     parser.add_argument("--seed",    type=int,  default=42)
     parser.add_argument("--plot",    action="store_true",
                         help="Save training curves and confusion matrix to plots/")
@@ -120,6 +121,12 @@ def get_params() -> Tuple[DataParams, ModelParams, TrainingParams]:
     parser.add_argument("--hidden_sizes", type=int,   nargs="+", default=[512, 256, 128],
                         metavar="H", help="Hidden layer widths for MLP")
     parser.add_argument("--activation",   choices=["relu", "gelu"], default="relu")
+
+    # Transfer learning
+    parser.add_argument("--transfer_mode", choices=["none", "resizeFreeze", "modifyFinetune"],
+                        default="none",
+                        help="Transfer learning mode: resizeFreeze (resize to 224, freeze backbone) "
+                             "or modifyFinetune (adapt first conv for 32x32, fine-tune all)")
 
     # VGG-specific
     parser.add_argument("--vgg_depth", choices=["11", "13", "16", "19"], default="16")
@@ -158,6 +165,7 @@ def get_params() -> Tuple[DataParams, ModelParams, TrainingParams]:
         activation    = args.activation,
         vgg_depth     = args.vgg_depth,
         resnet_layers = args.resnet_layers,
+        transfer_mode = args.transfer_mode,
     )
 
     training_params = TrainingParams(

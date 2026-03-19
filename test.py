@@ -6,7 +6,7 @@ from torch.utils.data import DataLoader
 from torchvision import datasets
 
 from train import get_transforms
-from parameters import DataParams, TrainingParams
+from parameters import DataParams, ModelParams, TrainingParams
 from plot import plot_confusion_matrix
 
 
@@ -14,6 +14,7 @@ from plot import plot_confusion_matrix
 def run_test(
     model:           nn.Module,
     data_params:     DataParams,
+    model_params:    ModelParams,
     training_params: TrainingParams,
     device:          torch.device,
     config_title:    str = "",
@@ -33,7 +34,7 @@ def run_test(
         Dictionary with key ``'overall'`` and per-class string keys mapped to
         accuracy values.
     """
-    tf = get_transforms(data_params, train=False)
+    tf = get_transforms(data_params, train=False, transfer_mode=model_params.transfer_mode)
 
     if data_params.dataset == "mnist":
         test_ds = datasets.MNIST(data_params.data_dir, train=False, download=True, transform=tf)

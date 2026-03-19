@@ -37,7 +37,7 @@ class TrainLogger:
             self._file.flush()
 
     # ------------------------------------------------------------------ #
-    def log_start(self, model, data_params, model_params, training_params) -> None:
+    def log_start(self, model, data_params, model_params, training_params, device=None) -> None:
         """Print experiment header before training begins."""
         self._start = time.time()
 
@@ -45,13 +45,16 @@ class TrainLogger:
         trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
         pct       = 100.0 * trainable / total if total else 0.0
 
-        arch = f"{model_params.model.upper()}"
-        if model_params.model == "mlp":
-            arch += f"  [{' → '.join(str(h) for h in model_params.hidden_sizes)}]"
-        elif model_params.model == "vgg":
-            arch += f"-{model_params.vgg_depth}"
-        elif model_params.model == "resnet":
-            arch += f"  layers={model_params.resnet_layers}"
+        if model_params.transfer_mode != "none":
+            arch = f"ResNet-18 (pretrained) → Linear(512, {data_params.num_classes})  [{model_params.transfer_mode}]"
+        else:
+            arch = f"{model_params.model.upper()}"
+            if model_params.model == "mlp":
+                arch += f"  [{' → '.join(str(h) for h in model_params.hidden_sizes)}]"
+            elif model_params.model == "vgg":
+                arch += f"-{model_params.vgg_depth}"
+            elif model_params.model == "resnet":
+                arch += f"  layers={model_params.resnet_layers}"
 
         self._w()
         self._w(f"▶▶▶  Starting  {self.experiment}")
@@ -63,7 +66,7 @@ class TrainLogger:
         self._w(f"  Dataset    : {data_params.dataset.upper()}")
         self._w(f"  Epochs     : {training_params.epochs}"
                 f"  |  Batch: {training_params.batch_size}"
-                f"  |  Device: {training_params.device}")
+                f"  |  Device: {device if device else training_params.device}")
         self._w(f"  LR         : {training_params.learning_rate}"
                 f"  |  Scheduler: {training_params.scheduler}"
                 f"  |  WD: {training_params.weight_decay}")

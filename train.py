@@ -11,12 +11,18 @@ from plot import plot_training_curves
 from logger import TrainLogger
 
 
-def get_transforms(data_params: DataParams, train: bool = True) -> transforms.Compose:
+def get_transforms(
+    data_params:   DataParams,
+    train:         bool = True,
+    transfer_mode: str  = "none",
+) -> transforms.Compose:
     """Build a torchvision transform pipeline for a given dataset split.
 
     Args:
-        data_params: Dataset-related parameters (dataset name, mean, std).
-        train:       If ``True``, applies training augmentations (CIFAR-10 only).
+        data_params:   Dataset-related parameters (dataset name, mean, std).
+        train:         If ``True``, applies training augmentations (CIFAR-10 only).
+        transfer_mode: If ``'resizeFreeze'``, upscales CIFAR-10 images to 224×224
+                       to match ImageNet input size expected by pretrained backbones.
 
     Returns:
         A composed transform pipeline.
@@ -29,35 +35,40 @@ def get_transforms(data_params: DataParams, train: bool = True) -> transforms.Co
             transforms.Normalize(mean, std),
         ])
     else:  # cifar10
+        resize = [transforms.Resize(224)] if transfer_mode == "resizeFreeze" else []
         if train:
             return transforms.Compose([
-                transforms.RandomCrop(32, padding=4),
+                *resize,
+                transforms.RandomCrop(224 if transfer_mode == "resizeFreeze" else 32, padding=4),
                 transforms.RandomHorizontalFlip(),
                 transforms.ToTensor(),
                 transforms.Normalize(mean, std),
             ])
         else:
             return transforms.Compose([
+                *resize,
                 transforms.ToTensor(),
                 transforms.Normalize(mean, std),
             ])
 
 
 def get_loaders(
-    data_params: DataParams,
+    data_params:   DataParams,
     training_params: TrainingParams,
+    transfer_mode: str = "none",
 ) -> Tuple[DataLoader, DataLoader]:
     """Create train and validation DataLoaders.
 
     Args:
         data_params:     Dataset parameters.
         training_params: Training parameters (batch size).
+        transfer_mode:   Passed to get_transforms for resize logic.
 
     Returns:
         Tuple of ``(train_loader, val_loader)``.
     """
-    train_tf = get_transforms(data_params, train=True)
-    val_tf   = get_transforms(data_params, train=False)
+    train_tf = get_transforms(data_params, train=True,  transfer_mode=transfer_mode)
+    val_tf   = get_transforms(data_params, train=False, transfer_mode=transfer_mode)
 
     if data_params.dataset == "mnist":
         train_ds = datasets.MNIST(data_params.data_dir, train=True,  download=True, transform=train_tf)
@@ -189,7 +200,7 @@ def run_training(
         training_params: Training hyperparameters.
         device:          Computation device.
     """
-    train_loader, val_loader = get_loaders(data_params, training_params)
+    train_loader, val_loader = get_loaders(data_params, training_params, model_params.transfer_mode)
     criterion = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(
         model.parameters(),
@@ -207,7 +218,7 @@ def run_training(
     train_accs:   List[float] = []
     val_accs:     List[float] = []
 
-    logger.log_start(model, data_params, model_params, training_params)
+    logger.log_start(model, data_params, model_params, training_params, device)
 
     for epoch in range(1, training_params.epochs + 1):
         tr_loss, tr_acc = train_one_epoch(

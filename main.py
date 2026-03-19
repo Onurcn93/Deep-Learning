@@ -5,6 +5,8 @@ import numpy as np
 import torch
 import torch.nn as nn
 
+from torchvision import models as tv_models
+
 from parameters import get_params, DataParams, ModelParams, TrainingParams
 from models.MLP import MLP
 from models.CNN import MNIST_CNN, SimpleCNN
@@ -31,6 +33,37 @@ def set_seed(seed: int) -> None:
     torch.cuda.manual_seed_all(seed)
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark     = False
+
+
+def build_pretrained_model(
+    model_params: ModelParams,
+    num_classes:  int = 10,
+) -> nn.Module:
+    """Load a pretrained ResNet-18 and adapt it for transfer learning.
+
+    Args:
+        model_params: Architecture parameters (transfer_mode).
+        num_classes:  Number of output classes.
+
+    Returns:
+        Adapted ``nn.Module`` ready for training.
+    """
+    model = tv_models.resnet18(weights=tv_models.ResNet18_Weights.DEFAULT)
+
+    if model_params.transfer_mode == "resizeFreeze":
+        # Freeze entire backbone — only the new FC head will train
+        for param in model.parameters():
+            param.requires_grad = False
+        model.fc = nn.Linear(model.fc.in_features, num_classes)
+
+    elif model_params.transfer_mode == "modifyFinetune":
+        # Replace first conv to accept 32×32 input (no aggressive downsampling)
+        model.conv1   = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
+        model.maxpool = nn.Identity()
+        model.fc      = nn.Linear(model.fc.in_features, num_classes)
+        # All layers fine-tune (requires_grad=True by default)
+
+    return model
 
 
 def build_model(
@@ -86,21 +119,23 @@ def build_config_title(
     training_params: TrainingParams,
 ) -> str:
     """Build a short human-readable title describing the current experiment setup."""
-    name = model_params.model
     parts = []
 
-    if name == "mlp":
-        arch = "\u00d7".join(str(h) for h in model_params.hidden_sizes)
-        parts.append(f"MLP {arch}")
-        parts.append(f"drop={model_params.dropout}")
-        parts.append(model_params.activation)
-    elif name == "cnn":
-        parts.append("CNN")
-    elif name == "vgg":
-        parts.append(f"VGG-{model_params.vgg_depth}")
-    elif name == "resnet":
-        parts.append(f"ResNet {model_params.resnet_layers}")
-
+    if model_params.transfer_mode != "none":
+        parts.append(f"ResNet18-pretrained | {model_params.transfer_mode}")
+    else:
+        name = model_params.model
+        if name == "mlp":
+            arch = "\u00d7".join(str(h) for h in model_params.hidden_sizes)
+            parts.append(f"MLP {arch}")
+            parts.append(f"drop={model_params.dropout}")
+            parts.append(model_params.activation)
+        elif name == "cnn":
+            parts.append("CNN")
+        elif name == "vgg":
+            parts.append(f"VGG-{model_params.vgg_depth}")
+        elif name == "resnet":
+            parts.append(f"ResNet {model_params.resnet_layers}")
     parts.append(data_params.dataset)
     parts.append(f"lr={training_params.learning_rate}")
     parts.append(f"bs={training_params.batch_size}")
@@ -119,14 +154,21 @@ def main() -> None:
     print(f"Seed set to: {training_params.seed}")
     print(f"Dataset: {data_params.dataset}  |  Model: {model_params.model}")
 
-    device = torch.device(
-        training_params.device if torch.cuda.is_available() else
-        "mps" if torch.backends.mps.is_available() else
-        "cpu"
-    )
+    if training_params.device == "auto":
+        if torch.cuda.is_available():
+            device = torch.device("cuda")
+        elif torch.backends.mps.is_available():
+            device = torch.device("mps")
+        else:
+            device = torch.device("cpu")
+    else:
+        device = torch.device(training_params.device)
     print(f"Using device: {device}")
 
-    model = build_model(data_params, model_params).to(device)
+    if model_params.transfer_mode != "none":
+        model = build_pretrained_model(model_params, data_params.num_classes).to(device)
+    else:
+        model = build_model(data_params, model_params).to(device)
     print(model)
 
     config_title = build_config_title(data_params, model_params, training_params)
@@ -137,7 +179,7 @@ def main() -> None:
         run_training(model, data_params, model_params, training_params, device, config_title, logger)
 
     if training_params.mode in ("test", "both"):
-        run_test(model, data_params, training_params, device, config_title)
+        run_test(model, data_params, model_params, training_params, device, config_title)
 
 
 if __name__ == "__main__":
