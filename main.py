@@ -12,6 +12,7 @@ from models.VGG import VGG
 from models.ResNet import ResNet, BasicBlock
 from train import run_training
 from test  import run_test
+from logger import TrainLogger
 
 
 # Fix for macOS SSL certificate verification error when downloading MNIST
@@ -130,8 +131,10 @@ def main() -> None:
 
     config_title = build_config_title(data_params, model_params, training_params)
 
+    logger = TrainLogger(experiment=config_title, enabled=training_params.log)
+
     if training_params.mode in ("train", "both"):
-        run_training(model, data_params, training_params, device, config_title)
+        run_training(model, data_params, model_params, training_params, device, config_title, logger)
 
     if training_params.mode in ("test", "both"):
         run_test(model, data_params, training_params, device, config_title)

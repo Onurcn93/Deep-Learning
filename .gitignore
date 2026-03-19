@@ -4,3 +4,4 @@ best_model.pth
 __pycache__/
 .claude/
 plots/
+logs/

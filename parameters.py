@@ -80,6 +80,7 @@ class TrainingParams:
     seed:          int
     device:        str
     plot:          bool
+    log:           bool
 
 
 def get_params() -> Tuple[DataParams, ModelParams, TrainingParams]:
@@ -98,6 +99,8 @@ def get_params() -> Tuple[DataParams, ModelParams, TrainingParams]:
     parser.add_argument("--seed",    type=int,  default=42)
     parser.add_argument("--plot",    action="store_true",
                         help="Save training curves and confusion matrix to plots/")
+    parser.add_argument("--log",     action=argparse.BooleanOptionalAction, default=True,
+                        help="Save training log to logs/ (default: True, disable with --no-log)")
 
     # Training
     parser.add_argument("--epochs",       type=int,   default=10)
@@ -171,6 +174,7 @@ def get_params() -> Tuple[DataParams, ModelParams, TrainingParams]:
         seed          = args.seed,
         device        = args.device,
         plot          = args.plot,
+        log           = args.log,
     )
 
     return data_params, model_params, training_params

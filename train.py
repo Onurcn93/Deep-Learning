@@ -8,6 +8,7 @@ from torchvision import datasets, transforms
 
 from parameters import DataParams, TrainingParams
 from plot import plot_training_curves
+from logger import TrainLogger
 
 
 def get_transforms(data_params: DataParams, train: bool = True) -> transforms.Compose:
@@ -116,8 +117,7 @@ def train_one_epoch(
         n          += imgs.size(0)
 
         if (batch_idx + 1) % log_interval == 0:
-            print(f"  [{batch_idx+1}/{len(loader)}] "
-                  f"loss: {total_loss/n:.4f}  acc: {correct/n:.4f}")
+            print(f" {batch_idx+1:>4}/{len(loader)} | {total_loss/n:>7.4f} | {correct/n:>6.3f} |       - |      -")
 
     return total_loss / n, correct / n
 
@@ -175,9 +175,11 @@ def build_scheduler(
 def run_training(
     model:           nn.Module,
     data_params:     DataParams,
+    model_params,
     training_params: TrainingParams,
     device:          torch.device,
     config_title:    str = "",
+    logger:          TrainLogger = None,
 ) -> None:
     """Full training loop with early stopping, LR scheduling, and best-model saving.
 
@@ -205,8 +207,9 @@ def run_training(
     train_accs:   List[float] = []
     val_accs:     List[float] = []
 
+    logger.log_start(model, data_params, model_params, training_params)
+
     for epoch in range(1, training_params.epochs + 1):
-        print(f"\nEpoch {epoch}/{training_params.epochs}")
         tr_loss, tr_acc = train_one_epoch(
             model, train_loader, optimizer, criterion, device,
             training_params.l1_lambda, training_params.log_interval,
@@ -221,26 +224,27 @@ def run_training(
         if scheduler is not None:
             scheduler.step()
 
-        print(f"  Train loss: {tr_loss:.4f}  acc: {tr_acc:.4f}")
-        print(f"  Val   loss: {val_loss:.4f}  acc: {val_acc:.4f}")
+        logger.log_epoch(epoch, tr_loss, tr_acc, val_loss, val_acc)
 
         if val_acc > best_acc:
             best_acc     = val_acc
             best_weights = copy.deepcopy(model.state_dict())
             torch.save(best_weights, training_params.save_path)
-            print(f"  Saved best model (val_acc={best_acc:.4f})")
+            logger.log_best(best_acc, training_params.save_path)
             patience_ctr = 0
         else:
             patience_ctr += 1
 
         if training_params.patience > 0 and patience_ctr >= training_params.patience:
-            print(f"\nEarly stopping triggered after {epoch} epochs "
-                  f"(patience={training_params.patience})")
+            logger._w(f"\nEarly stopping triggered after {epoch} epochs "
+                      f"(patience={training_params.patience})")
             break
 
     if best_weights is not None:
         model.load_state_dict(best_weights)
-    print(f"\nTraining done. Best val accuracy: {best_acc:.4f}")
+
+    logger.log_complete(best_acc, training_params.save_path)
+    logger.close()
 
     if training_params.plot:
         plot_training_curves(train_losses, val_losses, train_accs, val_accs, title=config_title)
