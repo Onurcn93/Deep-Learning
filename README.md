@@ -1,6 +1,3 @@
-# Deep-learning
-
-```markdown
 # Deep Learning Framework
 
 A personal PyTorch framework for training and evaluating deep learning models on image classification
@@ -37,7 +34,6 @@ benchmarks. Built to be extended with new architectures over time.
 git clone https://github.com/Onurcn93/Deep-Learning.git
 cd Deep-Learning
 pip install -r requirements.txt
-```
 
 **For GPU (CUDA 12.x):**
 ```bash
