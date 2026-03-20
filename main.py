@@ -139,7 +139,10 @@ def build_config_title(
     parts.append(data_params.dataset)
     parts.append(f"lr={training_params.learning_rate}")
     parts.append(f"bs={training_params.batch_size}")
-    parts.append(f"sched={training_params.scheduler}")
+    sched_str = training_params.scheduler
+    if training_params.warmup_epochs > 0:
+        sched_str += f"+warmup{training_params.warmup_epochs}"
+    parts.append(f"sched={sched_str}")
     if training_params.weight_decay > 0:
         parts.append(f"wd={training_params.weight_decay}")
     if training_params.distill:

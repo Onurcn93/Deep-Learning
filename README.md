@@ -72,6 +72,7 @@ python main.py --mode both --dataset mnist --model mlp
 | `--lr` | `1e-3` | Learning rate |
 | `--batch_size` | `64` | Mini-batch size |
 | `--scheduler` | `step` | `step`, `cosine`, or `none` |
+| `--warmup_epochs` | `0` | Linear LR warmup epochs before cosine decay (0 = disabled) |
 | `--patience` | `0` | Early stopping patience (0 = disabled) |
 | `--weight_decay` | `1e-4` | L2 regularization coefficient |
 | `--l1_lambda` | `0.0` | L1 regularization coefficient |
