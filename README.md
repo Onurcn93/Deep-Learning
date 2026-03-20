@@ -32,6 +32,7 @@ This repository structure and implementation logic are based on the [Deep Learni
 - **Plotting** (`--plot`): saves training curves and confusion matrix to `plots/`
 - **Structured logger** (`--log`): formatted epoch table saved to `logs/`
 - **Transfer learning**: ResNet-18 pretrained with freeze or full fine-tune modes
+- **Knowledge distillation**: Hinton KD — soft + hard loss with temperature scaling (`--distill`)
 
 ---
 
@@ -41,6 +42,7 @@ This repository structure and implementation logic are based on the [Deep Learni
 git clone https://github.com/Onurcn93/Deep-Learning.git
 cd Deep-Learning
 pip install -r requirements.txt
+```
 
 **For GPU (CUDA 12.x):**
 ```bash
@@ -73,8 +75,14 @@ python main.py --mode both --dataset mnist --model mlp
 | `--patience` | `0` | Early stopping patience (0 = disabled) |
 | `--weight_decay` | `1e-4` | L2 regularization coefficient |
 | `--l1_lambda` | `0.0` | L1 regularization coefficient |
+| `--label_smoothing` | `0.0` | Label smoothing epsilon for CrossEntropyLoss |
 | `--plot` | `False` | Save training curves and confusion matrix to `plots/` |
 | `--seed` | `42` | Global random seed |
+| `--distill` | `False` | Train with Hinton knowledge distillation |
+| `--teacher_path` | `teachers/resnet_teacher.pth` | Path to saved teacher weights |
+| `--temperature` | `4.0` | Distillation temperature T |
+| `--alpha` | `0.7` | Weight for soft KD loss (1-alpha for hard CE) |
+| `--count_flops` | `False` | Print MACs and param count via ptflops |
 
 ### Model-specific Arguments
 
@@ -120,6 +128,15 @@ python main.py --dataset cifar10 --transfer_mode resizeFreeze \
 # Transfer learning — adapt first conv for 32x32, fine-tune all layers
 python main.py --dataset cifar10 --transfer_mode modifyFinetune \
                --epochs 10 --batch_size 128 --lr 1e-4 --plot --log
+
+# Knowledge distillation — SimpleCNN student, ResNet teacher
+# (copy best ResNet weights to teachers/resnet_teacher.pth first)
+python main.py --dataset cifar10 --model cnn --distill \
+               --teacher_path teachers/resnet_teacher.pth \
+               --temperature 4.0 --alpha 0.7 \
+               --epochs 20 --lr 1e-3 --batch_size 64 \
+               --scheduler cosine --weight_decay 1e-4 \
+               --mode both --plot --count_flops
 ```
 
 ---
@@ -141,6 +158,7 @@ Deep-Learning/
 │   ├── CNN.py        # LeNet-style CNN (MNIST) / SimpleCNN (CIFAR-10)
 │   ├── VGG.py        # VGG-11/13/16/19
 │   └── ResNet.py     # ResNet with BasicBlock
+├── teachers/         # Gitignored — place teacher .pth weights here
 └── requirements.txt
 ```
 
@@ -152,7 +170,8 @@ Deep-Learning/
 - PyTorch >= 2.0
 - torchvision >= 0.15
 - numpy >= 1.24
-- matplotlib
+- matplotlib >= 3.7
+- ptflops >= 0.7 *(for FLOPs counting)*
 - seaborn *(optional, for nicer confusion matrix)*
 ```
 

@@ -142,6 +142,8 @@ def build_config_title(
     parts.append(f"sched={training_params.scheduler}")
     if training_params.weight_decay > 0:
         parts.append(f"wd={training_params.weight_decay}")
+    if training_params.distill:
+        parts.append(f"KD | T={training_params.temperature} | alpha={training_params.alpha}")
 
     return " | ".join(parts)
 

@@ -70,6 +70,12 @@ class TrainLogger:
         self._w(f"  LR         : {training_params.learning_rate}"
                 f"  |  Scheduler: {training_params.scheduler}"
                 f"  |  WD: {training_params.weight_decay}")
+        if training_params.label_smoothing > 0:
+            self._w(f"  Label smooth: eps={training_params.label_smoothing}")
+        if training_params.distill:
+            self._w(f"  Distillation: T={training_params.temperature}"
+                    f"  |  alpha={training_params.alpha}"
+                    f"  |  teacher={training_params.teacher_path}")
         if training_params.patience > 0:
             self._w(f"  Early stop : patience={training_params.patience}")
         self._w(f"  Save by    : val acc")
