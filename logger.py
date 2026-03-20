@@ -67,8 +67,11 @@ class TrainLogger:
         self._w(f"  Epochs     : {training_params.epochs}"
                 f"  |  Batch: {training_params.batch_size}"
                 f"  |  Device: {device if device else training_params.device}")
+        sched_str = training_params.scheduler
+        if training_params.warmup_epochs > 0:
+            sched_str += f" (warmup={training_params.warmup_epochs})"
         self._w(f"  LR         : {training_params.learning_rate}"
-                f"  |  Scheduler: {training_params.scheduler}"
+                f"  |  Scheduler: {sched_str}"
                 f"  |  WD: {training_params.weight_decay}")
         if training_params.label_smoothing > 0:
             self._w(f"  Label smooth: eps={training_params.label_smoothing}")

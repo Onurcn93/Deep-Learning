@@ -76,6 +76,7 @@ class TrainingParams:
     l1_lambda:       float
     label_smoothing: float
     scheduler:       str
+    warmup_epochs:   int
     patience:      int
     save_path:     str
     log_interval:  int
@@ -119,8 +120,10 @@ def get_params() -> Tuple[DataParams, ModelParams, TrainingParams]:
                         help="L1 regularisation coefficient (added to loss)")
     parser.add_argument("--label_smoothing", type=float, default=0.0,
                         help="Label smoothing epsilon for CrossEntropyLoss (0 = disabled)")
-    parser.add_argument("--scheduler",    choices=["step", "cosine", "none"], default="step",
+    parser.add_argument("--scheduler",      choices=["step", "cosine", "none"], default="step",
                         help="LR scheduler type")
+    parser.add_argument("--warmup_epochs", type=int, default=0,
+                        help="Linear LR warmup epochs before cosine decay (0 = disabled)")
     parser.add_argument("--patience",     type=int,   default=0,
                         help="Early-stopping patience in epochs (0 = disabled)")
 
@@ -197,6 +200,7 @@ def get_params() -> Tuple[DataParams, ModelParams, TrainingParams]:
         l1_lambda        = args.l1_lambda,
         label_smoothing  = args.label_smoothing,
         scheduler        = args.scheduler,
+        warmup_epochs    = args.warmup_epochs,
         patience      = args.patience,
         save_path     = "best_model.pth",
         log_interval  = 100,

@@ -247,9 +247,13 @@ def build_scheduler(
 ) -> Optional[torch.optim.lr_scheduler.LRScheduler]:
     """Instantiate an LR scheduler based on training parameters.
 
+    When ``warmup_epochs > 0`` and scheduler is ``'cosine'``, returns a
+    ``SequentialLR`` that linearly ramps LR from 10% to 100% over the warmup
+    period, then applies cosine annealing for the remaining epochs.
+
     Args:
         optimizer:       The optimiser whose LR will be scheduled.
-        training_params: Training parameters (scheduler type, epochs).
+        training_params: Training parameters (scheduler type, epochs, warmup).
 
     Returns:
         An ``LRScheduler`` instance, or ``None`` if scheduler is ``'none'``.
@@ -257,6 +261,17 @@ def build_scheduler(
     if training_params.scheduler == "step":
         return torch.optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.5)
     if training_params.scheduler == "cosine":
+        warmup = training_params.warmup_epochs
+        if warmup > 0:
+            warmup_sched  = torch.optim.lr_scheduler.LinearLR(
+                optimizer, start_factor=0.1, end_factor=1.0, total_iters=warmup,
+            )
+            cosine_sched  = torch.optim.lr_scheduler.CosineAnnealingLR(
+                optimizer, T_max=training_params.epochs - warmup,
+            )
+            return torch.optim.lr_scheduler.SequentialLR(
+                optimizer, schedulers=[warmup_sched, cosine_sched], milestones=[warmup],
+            )
         return torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=training_params.epochs)
     return None
 
