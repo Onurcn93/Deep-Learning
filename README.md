@@ -80,7 +80,8 @@ python main.py --mode both --dataset mnist --model mlp
 | `--label_smoothing` | `0.0` | Label smoothing epsilon for CrossEntropyLoss |
 | `--plot` | `False` | Save training curves and confusion matrix to `plots/` |
 | `--seed` | `42` | Global random seed |
-| `--distill` | `False` | Train with Hinton knowledge distillation |
+| `--distill` | `False` | Train with knowledge distillation |
+| `--distill_mode` | `hinton` | `hinton` (soft KL + hard CE) or `teacher_prob` (dynamic label smoothing) |
 | `--teacher_path` | `teachers/resnet_teacher.pth` | Path to saved teacher weights |
 | `--temperature` | `4.0` | Distillation temperature T |
 | `--alpha` | `0.7` | Weight for soft KD loss (1-alpha for hard CE) |

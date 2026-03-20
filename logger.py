@@ -78,9 +78,13 @@ class TrainLogger:
         if training_params.label_smoothing > 0:
             self._w(f"  Label smooth: eps={training_params.label_smoothing}")
         if training_params.distill:
-            self._w(f"  Distillation: T={training_params.temperature}"
-                    f"  |  alpha={training_params.alpha}"
-                    f"  |  teacher={training_params.teacher_path}")
+            if training_params.distill_mode == "teacher_prob":
+                self._w(f"  Distillation: teacher_prob"
+                        f"  |  teacher={training_params.teacher_path}")
+            else:
+                self._w(f"  Distillation: hinton | T={training_params.temperature}"
+                        f"  |  alpha={training_params.alpha}"
+                        f"  |  teacher={training_params.teacher_path}")
         if training_params.patience > 0:
             self._w(f"  Early stop : patience={training_params.patience}")
         self._w(f"  Save by    : val acc")

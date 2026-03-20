@@ -85,6 +85,7 @@ class TrainingParams:
     plot:          bool
     log:           bool
     distill:       bool
+    distill_mode:  str   # 'hinton' | 'teacher_prob'
     teacher_path:  str
     temperature:   float
     alpha:         float
@@ -134,8 +135,10 @@ def get_params() -> Tuple[DataParams, ModelParams, TrainingParams]:
     parser.add_argument("--activation",   choices=["relu", "gelu"], default="relu")
 
     # Knowledge distillation
-    parser.add_argument("--distill",      action="store_true",
-                        help="Train with Hinton knowledge distillation")
+    parser.add_argument("--distill",       action="store_true",
+                        help="Train with knowledge distillation")
+    parser.add_argument("--distill_mode",  choices=["hinton", "teacher_prob"], default="hinton",
+                        help="KD loss type: hinton (soft KL+hard CE) or teacher_prob (dynamic label smoothing)")
     parser.add_argument("--teacher_path", type=str, default="teachers/resnet_teacher.pth",
                         help="Path to saved teacher model weights (inside teachers/ folder)")
     parser.add_argument("--temperature",  type=float, default=4.0,
@@ -209,6 +212,7 @@ def get_params() -> Tuple[DataParams, ModelParams, TrainingParams]:
         plot          = args.plot,
         log           = args.log,
         distill       = args.distill,
+        distill_mode  = args.distill_mode,
         teacher_path  = args.teacher_path,
         temperature   = args.temperature,
         alpha         = args.alpha,

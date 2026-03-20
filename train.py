@@ -211,6 +211,80 @@ def train_one_epoch_kd(
     return total_loss / n, correct / n
 
 
+def train_one_epoch_teacher_prob(
+    student:      nn.Module,
+    teacher:      nn.Module,
+    loader:       DataLoader,
+    optimizer:    torch.optim.Optimizer,
+    device:       torch.device,
+    l1_lambda:    float,
+    log_interval: int,
+) -> Tuple[float, float]:
+    """Run one training epoch using teacher-probability dynamic label smoothing.
+
+    Combines label smoothing with knowledge distillation: the teacher's softmax
+    confidence on the true class becomes a per-sample smoothing weight.
+
+    For each sample the soft target distribution is:
+        - true class  → p_teacher(y_true)
+        - other classes → (1 - p_teacher(y_true)) / (C - 1)  equally
+
+    Loss = CE(student_logits, soft_target)
+
+    High teacher confidence → near one-hot target (easy sample).
+    Low teacher confidence  → spread distribution (hard sample).
+    No temperature or alpha — the teacher's raw softmax IS the signal.
+
+    Args:
+        student:      Student network being trained.
+        teacher:      Frozen teacher network providing per-sample confidence.
+        loader:       Training DataLoader.
+        optimizer:    Optimiser instance.
+        device:       Computation device.
+        l1_lambda:    L1 regularisation coefficient (0 = disabled).
+        log_interval: Batches between progress prints.
+
+    Returns:
+        Tuple of ``(mean_loss, accuracy)`` over the epoch.
+    """
+    student.train()
+    teacher.eval()
+    total_loss, correct, n = 0.0, 0, 0
+
+    for batch_idx, (imgs, labels) in enumerate(loader):
+        imgs, labels = imgs.to(device), labels.to(device)
+
+        optimizer.zero_grad()
+
+        with torch.no_grad():
+            t_probs = F.softmax(teacher(imgs), dim=1)           # [B, C] at T=1
+            p_true  = t_probs.gather(1, labels.unsqueeze(1)).squeeze(1)  # [B]
+
+        # Build soft target: (1-p_true)/(C-1) everywhere, then set true class
+        C            = t_probs.size(1)
+        soft_targets = ((1.0 - p_true) / (C - 1)).unsqueeze(1).expand(-1, C).clone()
+        soft_targets.scatter_(1, labels.unsqueeze(1), p_true.unsqueeze(1))
+
+        s_logits = student(imgs)
+        loss     = -(soft_targets * F.log_softmax(s_logits, dim=1)).sum(dim=1).mean()
+
+        if l1_lambda > 0:
+            l1_norm = sum(p.abs().sum() for p in student.parameters())
+            loss = loss + l1_lambda * l1_norm
+
+        loss.backward()
+        optimizer.step()
+
+        total_loss += loss.detach().item() * imgs.size(0)
+        correct    += s_logits.argmax(1).eq(labels).sum().item()
+        n          += imgs.size(0)
+
+        if (batch_idx + 1) % log_interval == 0:
+            print(f" {batch_idx+1:>4}/{len(loader)} | {total_loss/n:>7.4f} | {correct/n:>6.3f} |       - |      -")
+
+    return total_loss / n, correct / n
+
+
 def validate(
     model:     nn.Module,
     loader:    DataLoader,
@@ -323,18 +397,29 @@ def run_training(
 
     for epoch in range(1, training_params.epochs + 1):
         if training_params.distill and teacher is not None:
-            tr_loss, tr_acc = train_one_epoch_kd(
-                student      = model,
-                teacher      = teacher,
-                loader       = train_loader,
-                optimizer    = optimizer,
-                criterion    = criterion,
-                device       = device,
-                temperature  = training_params.temperature,
-                alpha        = training_params.alpha,
-                l1_lambda    = training_params.l1_lambda,
-                log_interval = training_params.log_interval,
-            )
+            if training_params.distill_mode == "teacher_prob":
+                tr_loss, tr_acc = train_one_epoch_teacher_prob(
+                    student      = model,
+                    teacher      = teacher,
+                    loader       = train_loader,
+                    optimizer    = optimizer,
+                    device       = device,
+                    l1_lambda    = training_params.l1_lambda,
+                    log_interval = training_params.log_interval,
+                )
+            else:  # hinton
+                tr_loss, tr_acc = train_one_epoch_kd(
+                    student      = model,
+                    teacher      = teacher,
+                    loader       = train_loader,
+                    optimizer    = optimizer,
+                    criterion    = criterion,
+                    device       = device,
+                    temperature  = training_params.temperature,
+                    alpha        = training_params.alpha,
+                    l1_lambda    = training_params.l1_lambda,
+                    log_interval = training_params.log_interval,
+                )
         else:
             tr_loss, tr_acc = train_one_epoch(
                 model, train_loader, optimizer, criterion, device,
