@@ -83,6 +83,11 @@ class TrainingParams:
     device:        str
     plot:          bool
     log:           bool
+    distill:       bool
+    teacher_path:  str
+    temperature:   float
+    alpha:         float
+    count_flops:   bool
 
 
 def get_params() -> Tuple[DataParams, ModelParams, TrainingParams]:
@@ -124,6 +129,18 @@ def get_params() -> Tuple[DataParams, ModelParams, TrainingParams]:
     parser.add_argument("--hidden_sizes", type=int,   nargs="+", default=[512, 256, 128],
                         metavar="H", help="Hidden layer widths for MLP")
     parser.add_argument("--activation",   choices=["relu", "gelu"], default="relu")
+
+    # Knowledge distillation
+    parser.add_argument("--distill",      action="store_true",
+                        help="Train with Hinton knowledge distillation")
+    parser.add_argument("--teacher_path", type=str, default="teachers/resnet_teacher.pth",
+                        help="Path to saved teacher model weights (inside teachers/ folder)")
+    parser.add_argument("--temperature",  type=float, default=4.0,
+                        help="Distillation temperature T (softens teacher/student distributions)")
+    parser.add_argument("--alpha",        type=float, default=0.7,
+                        help="Weight for soft KD loss; (1-alpha) weights the hard CE loss")
+    parser.add_argument("--count_flops",  action="store_true",
+                        help="Print MACs and parameter count via ptflops before training")
 
     # Transfer learning
     parser.add_argument("--transfer_mode", choices=["none", "resizeFreeze", "modifyFinetune"],
@@ -187,6 +204,11 @@ def get_params() -> Tuple[DataParams, ModelParams, TrainingParams]:
         device        = args.device,
         plot          = args.plot,
         log           = args.log,
+        distill       = args.distill,
+        teacher_path  = args.teacher_path,
+        temperature   = args.temperature,
+        alpha         = args.alpha,
+        count_flops   = args.count_flops,
     )
 
     return data_params, model_params, training_params

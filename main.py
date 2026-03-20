@@ -171,12 +171,40 @@ def main() -> None:
         model = build_model(data_params, model_params).to(device)
     print(model)
 
+    # FLOPs count (ptflops) — only for CIFAR-10 models with 3×32×32 input
+    if training_params.count_flops:
+        try:
+            from ptflops import get_model_complexity_info
+            macs, params = get_model_complexity_info(
+                model, (3, 32, 32), as_strings=True, print_per_layer_stat=False, verbose=False,
+            )
+            print(f"\nModel complexity — MACs: {macs}  |  Params: {params}\n")
+        except ImportError:
+            print("ptflops not installed — run: pip install ptflops")
+
+    # Load teacher for knowledge distillation
+    teacher = None
+    if training_params.distill:
+        teacher_model_params = ModelParams(
+            model         = "resnet",
+            hidden_sizes  = [512, 256, 128],
+            dropout       = 0.3,
+            activation    = "relu",
+            vgg_depth     = "16",
+            resnet_layers = [2, 2, 2, 2],
+            transfer_mode = "none",
+        )
+        teacher = build_model(data_params, teacher_model_params).to(device)
+        teacher.load_state_dict(torch.load(training_params.teacher_path, map_location=device))
+        teacher.eval()
+        print(f"Teacher loaded from: {training_params.teacher_path}")
+
     config_title = build_config_title(data_params, model_params, training_params)
 
     logger = TrainLogger(experiment=config_title, enabled=training_params.log)
 
     if training_params.mode in ("train", "both"):
-        run_training(model, data_params, model_params, training_params, device, config_title, logger)
+        run_training(model, data_params, model_params, training_params, device, config_title, logger, teacher)
 
     if training_params.mode in ("test", "both"):
         run_test(model, data_params, model_params, training_params, device, config_title)

@@ -3,6 +3,7 @@ from typing import List, Optional, Tuple
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 
@@ -133,6 +134,83 @@ def train_one_epoch(
     return total_loss / n, correct / n
 
 
+def train_one_epoch_kd(
+    student:      nn.Module,
+    teacher:      nn.Module,
+    loader:       DataLoader,
+    optimizer:    torch.optim.Optimizer,
+    criterion:    nn.Module,
+    device:       torch.device,
+    temperature:  float,
+    alpha:        float,
+    l1_lambda:    float,
+    log_interval: int,
+) -> Tuple[float, float]:
+    """Run one KD training epoch (Hinton et al., 2015).
+
+    Loss = alpha * T² * KL(softmax(s/T) || softmax(t/T))
+         + (1 - alpha) * CE(s, y_hard)
+
+    The T² scaling ensures gradient magnitudes stay balanced when T changes.
+
+    Args:
+        student:      Student network being trained.
+        teacher:      Frozen teacher network providing soft targets.
+        loader:       Training DataLoader.
+        optimizer:    Optimiser instance.
+        criterion:    Hard-label loss (CrossEntropyLoss).
+        device:       Computation device.
+        temperature:  Distillation temperature T (> 1 softens distributions).
+        alpha:        Weight on soft KD loss; ``(1-alpha)`` weights hard CE loss.
+        l1_lambda:    L1 regularisation coefficient (0 = disabled).
+        log_interval: Batches between progress prints.
+
+    Returns:
+        Tuple of ``(mean_loss, accuracy)`` over the epoch.
+    """
+    student.train()
+    teacher.eval()
+    total_loss, correct, n = 0.0, 0, 0
+
+    for batch_idx, (imgs, labels) in enumerate(loader):
+        imgs, labels = imgs.to(device), labels.to(device)
+
+        optimizer.zero_grad()
+
+        with torch.no_grad():
+            t_logits = teacher(imgs)
+
+        s_logits = student(imgs)
+
+        # Soft loss: KL(student_soft || teacher_soft), scaled by T²
+        soft_loss = F.kl_div(
+            F.log_softmax(s_logits / temperature, dim=1),
+            F.softmax(t_logits / temperature, dim=1),
+            reduction="batchmean",
+        ) * (temperature ** 2)
+
+        # Hard loss: standard cross-entropy at T=1
+        hard_loss = criterion(s_logits, labels)
+
+        loss = alpha * soft_loss + (1.0 - alpha) * hard_loss
+
+        if l1_lambda > 0:
+            l1_norm = sum(p.abs().sum() for p in student.parameters())
+            loss = loss + l1_lambda * l1_norm
+
+        loss.backward()
+        optimizer.step()
+
+        total_loss += loss.detach().item() * imgs.size(0)
+        correct    += s_logits.argmax(1).eq(labels).sum().item()
+        n          += imgs.size(0)
+
+        if (batch_idx + 1) % log_interval == 0:
+            print(f" {batch_idx+1:>4}/{len(loader)} | {total_loss/n:>7.4f} | {correct/n:>6.3f} |       - |      -")
+
+    return total_loss / n, correct / n
+
+
 def validate(
     model:     nn.Module,
     loader:    DataLoader,
@@ -191,14 +269,22 @@ def run_training(
     device:          torch.device,
     config_title:    str = "",
     logger:          TrainLogger = None,
+    teacher:         Optional[nn.Module] = None,
 ) -> None:
     """Full training loop with early stopping, LR scheduling, and best-model saving.
+
+    When ``teacher`` is provided and ``training_params.distill`` is ``True``,
+    each epoch uses Hinton KD loss instead of plain cross-entropy.
 
     Args:
         model:           The neural network to train.
         data_params:     Dataset parameters.
+        model_params:    Model architecture parameters.
         training_params: Training hyperparameters.
         device:          Computation device.
+        config_title:    Human-readable experiment title for logging/plotting.
+        logger:          TrainLogger instance.
+        teacher:         Optional frozen teacher model for knowledge distillation.
     """
     train_loader, val_loader = get_loaders(data_params, training_params, model_params.transfer_mode)
     criterion = nn.CrossEntropyLoss(label_smoothing=training_params.label_smoothing)
@@ -221,10 +307,24 @@ def run_training(
     logger.log_start(model, data_params, model_params, training_params, device)
 
     for epoch in range(1, training_params.epochs + 1):
-        tr_loss, tr_acc = train_one_epoch(
-            model, train_loader, optimizer, criterion, device,
-            training_params.l1_lambda, training_params.log_interval,
-        )
+        if training_params.distill and teacher is not None:
+            tr_loss, tr_acc = train_one_epoch_kd(
+                student      = model,
+                teacher      = teacher,
+                loader       = train_loader,
+                optimizer    = optimizer,
+                criterion    = criterion,
+                device       = device,
+                temperature  = training_params.temperature,
+                alpha        = training_params.alpha,
+                l1_lambda    = training_params.l1_lambda,
+                log_interval = training_params.log_interval,
+            )
+        else:
+            tr_loss, tr_acc = train_one_epoch(
+                model, train_loader, optimizer, criterion, device,
+                training_params.l1_lambda, training_params.log_interval,
+            )
         val_loss, val_acc = validate(model, val_loader, criterion, device)
 
         train_losses.append(tr_loss)
