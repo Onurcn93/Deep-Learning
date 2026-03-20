@@ -201,7 +201,7 @@ def run_training(
         device:          Computation device.
     """
     train_loader, val_loader = get_loaders(data_params, training_params, model_params.transfer_mode)
-    criterion = nn.CrossEntropyLoss()
+    criterion = nn.CrossEntropyLoss(label_smoothing=training_params.label_smoothing)
     optimizer = torch.optim.Adam(
         model.parameters(),
         lr           = training_params.learning_rate,

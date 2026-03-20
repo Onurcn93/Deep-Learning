@@ -68,13 +68,14 @@ class TrainingParams:
         plot:          If ``True``, save training curves and confusion matrix to ``plots/``.
     """
 
-    mode:          str
-    epochs:        int
-    batch_size:    int
-    learning_rate: float
-    weight_decay:  float
-    l1_lambda:     float
-    scheduler:     str
+    mode:            str
+    epochs:          int
+    batch_size:      int
+    learning_rate:   float
+    weight_decay:    float
+    l1_lambda:       float
+    label_smoothing: float
+    scheduler:       str
     patience:      int
     save_path:     str
     log_interval:  int
@@ -109,8 +110,10 @@ def get_params() -> Tuple[DataParams, ModelParams, TrainingParams]:
     parser.add_argument("--batch_size",   type=int,   default=64)
     parser.add_argument("--weight_decay", type=float, default=1e-4,
                         help="L2 regularisation coefficient (optimizer weight_decay)")
-    parser.add_argument("--l1_lambda",    type=float, default=0.0,
+    parser.add_argument("--l1_lambda",       type=float, default=0.0,
                         help="L1 regularisation coefficient (added to loss)")
+    parser.add_argument("--label_smoothing", type=float, default=0.0,
+                        help="Label smoothing epsilon for CrossEntropyLoss (0 = disabled)")
     parser.add_argument("--scheduler",    choices=["step", "cosine", "none"], default="step",
                         help="LR scheduler type")
     parser.add_argument("--patience",     type=int,   default=0,
@@ -173,9 +176,10 @@ def get_params() -> Tuple[DataParams, ModelParams, TrainingParams]:
         epochs        = args.epochs,
         batch_size    = args.batch_size,
         learning_rate = args.lr,
-        weight_decay  = args.weight_decay,
-        l1_lambda     = args.l1_lambda,
-        scheduler     = args.scheduler,
+        weight_decay     = args.weight_decay,
+        l1_lambda        = args.l1_lambda,
+        label_smoothing  = args.label_smoothing,
+        scheduler        = args.scheduler,
         patience      = args.patience,
         save_path     = "best_model.pth",
         log_interval  = 100,
