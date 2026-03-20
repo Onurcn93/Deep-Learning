@@ -19,6 +19,7 @@ This repository structure and implementation logic are based on the [Deep Learni
 | ResNet | `--model resnet` | CIFAR-10 | Configurable blocks (default: ResNet-18) |
 | ResNet-18 pretrained | `--transfer_mode resizeFreeze` | CIFAR-10 | ImageNet weights, resize to 224, frozen backbone, FC only |
 | ResNet-18 pretrained | `--transfer_mode modifyFinetune` | CIFAR-10 | ImageNet weights, adapted conv1 for 32×32, full fine-tune |
+| MobileNetV2 | `--model mobilenet` | CIFAR-10 | Inverted residuals, stride-1 stem for 32×32, Kaiming init |
 
 ---
 

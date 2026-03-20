@@ -12,6 +12,7 @@ from models.MLP import MLP
 from models.CNN import MNIST_CNN, SimpleCNN
 from models.VGG import VGG
 from models.ResNet import ResNet, BasicBlock
+from models.MobileNet import MobileNetV2
 from train import run_training
 from test  import run_test
 from logger import TrainLogger
@@ -110,6 +111,11 @@ def build_model(
             raise ValueError("ResNet is designed for 3-channel images; use cifar10 with resnet.")
         return ResNet(BasicBlock, model_params.resnet_layers, num_classes=nc)
 
+    if name == "mobilenet":
+        if data_params.dataset == "mnist":
+            raise ValueError("MobileNetV2 is designed for 3-channel images; use cifar10 with mobilenet.")
+        return MobileNetV2(num_classes=nc)
+
     raise ValueError(f"Unknown model: {name}")
 
 
@@ -136,6 +142,8 @@ def build_config_title(
             parts.append(f"VGG-{model_params.vgg_depth}")
         elif name == "resnet":
             parts.append(f"ResNet {model_params.resnet_layers}")
+        elif name == "mobilenet":
+            parts.append("MobileNetV2")
     parts.append(data_params.dataset)
     parts.append(f"lr={training_params.learning_rate}")
     parts.append(f"bs={training_params.batch_size}")

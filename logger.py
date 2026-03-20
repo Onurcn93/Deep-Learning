@@ -55,6 +55,8 @@ class TrainLogger:
                 arch += f"-{model_params.vgg_depth}"
             elif model_params.model == "resnet":
                 arch += f"  layers={model_params.resnet_layers}"
+            elif model_params.model == "mobilenet":
+                arch = "MobileNetV2  [stride-1 stem for 32×32]"
 
         self._w()
         self._w(f"▶▶▶  Starting  {self.experiment}")
