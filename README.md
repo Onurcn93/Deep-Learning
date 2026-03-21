@@ -3,7 +3,7 @@
 A personal PyTorch framework for training and evaluating deep learning models on image classification
 benchmarks. Built to be extended with new architectures over time.
 
-## Acknowledgments
+## Acknowledgements
 
 This repository structure and implementation logic are based on the [Deep Learning Tutorial](https://github.com/SU-Intelligent-systems-Lab/Deep-learning) by the Sabancı University (SU) Intelligent Systems Lab.
 
@@ -33,7 +33,7 @@ This repository structure and implementation logic are based on the [Deep Learni
 - **Plotting** (`--plot`): saves training curves and confusion matrix to `plots/`
 - **Structured logger** (`--log`): formatted epoch table saved to `logs/`
 - **Transfer learning**: ResNet-18 pretrained with freeze or full fine-tune modes
-- **Knowledge distillation**: Hinton KD — soft + hard loss with temperature scaling (`--distill`)
+- **Knowledge distillation**: Hinton KD and teacher_prob — soft + hard loss with temperature scaling (`--distill`, `--distill_mode`)
 
 ---
 
@@ -65,7 +65,7 @@ python main.py --mode both --dataset mnist --model mlp
 |----------|---------|-------------|
 | `--mode` | `both` | `train`, `test`, or `both` |
 | `--dataset` | `mnist` | `mnist` or `cifar10` |
-| `--model` | `mlp` | `mlp`, `cnn`, `vgg`, `resnet` |
+| `--model` | `mlp` | `mlp`, `cnn`, `vgg`, `resnet`, `mobilenet` |
 | `--device` | `auto` | `auto`, `cuda`, `mps`, or `cpu` |
 | `--transfer_mode` | `none` | `none`, `resizeFreeze`, `modifyFinetune` |
 | `--log` / `--no-log` | `True` | Save training log to `logs/` |
@@ -125,11 +125,11 @@ python main.py --mode both --dataset cifar10 --model vgg \
                --vgg_depth 16 --epochs 30 --plot
 
 # Transfer learning — freeze backbone, train FC only (resize CIFAR to 224)
-python main.py --dataset cifar10 --transfer_mode resizeFreeze \
+python main.py --mode both --dataset cifar10 --transfer_mode resizeFreeze \
                --epochs 10 --batch_size 128 --plot --log
 
 # Transfer learning — adapt first conv for 32x32, fine-tune all layers
-python main.py --dataset cifar10 --transfer_mode modifyFinetune \
+python main.py --mode both --dataset cifar10 --transfer_mode modifyFinetune \
                --epochs 10 --batch_size 128 --lr 1e-4 --plot --log
 
 # Knowledge distillation — SimpleCNN student, ResNet teacher
@@ -160,7 +160,8 @@ Deep-Learning/
 │   ├── MLP.py        # Multi-Layer Perceptron
 │   ├── CNN.py        # LeNet-style CNN (MNIST) / SimpleCNN (CIFAR-10)
 │   ├── VGG.py        # VGG-11/13/16/19
-│   └── ResNet.py     # ResNet with BasicBlock
+│   ├── ResNet.py     # ResNet with BasicBlock
+│   └── MobileNet.py  # MobileNetV2 with stride-1 stem for 32×32
 ├── teachers/         # Gitignored — place teacher .pth weights here
 └── requirements.txt
 ```
@@ -176,6 +177,5 @@ Deep-Learning/
 - matplotlib >= 3.7
 - ptflops >= 0.7 *(for FLOPs counting)*
 - seaborn *(optional, for nicer confusion matrix)*
-```
 
 
