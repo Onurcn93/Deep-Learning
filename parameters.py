@@ -17,13 +17,14 @@ class DataParams:
         num_classes: Number of target classes.
     """
 
-    dataset:     str
-    data_dir:    str
-    num_workers: int
-    mean:        Tuple[float, ...]
-    std:         Tuple[float, ...]
-    input_size:  int
-    num_classes: int
+    dataset:      str
+    data_dir:     str
+    cifar10c_dir: str
+    num_workers:  int
+    mean:         Tuple[float, ...]
+    std:          Tuple[float, ...]
+    input_size:   int
+    num_classes:  int
 
 
 @dataclass
@@ -89,7 +90,8 @@ class TrainingParams:
     teacher_path:  str
     temperature:   float
     alpha:         float
-    count_flops:   bool
+    count_flops:    bool
+    test_cifar10c:  bool
 
 
 def get_params() -> Tuple[DataParams, ModelParams, TrainingParams]:
@@ -147,6 +149,10 @@ def get_params() -> Tuple[DataParams, ModelParams, TrainingParams]:
                         help="Weight for soft KD loss; (1-alpha) weights the hard CE loss")
     parser.add_argument("--count_flops",  action="store_true",
                         help="Print MACs and parameter count via ptflops before training")
+    parser.add_argument("--cifar10c_dir", type=str, default="data/CIFAR-10-C",
+                        help="Path to extracted CIFAR-10-C folder containing .npy corruption files")
+    parser.add_argument("--test_cifar10c", action="store_true",
+                        help="Evaluate model on all CIFAR-10-C corruptions (requires --mode test or both)")
 
     # Transfer learning
     parser.add_argument("--transfer_mode", choices=["none", "resizeFreeze", "modifyFinetune"],
@@ -175,13 +181,14 @@ def get_params() -> Tuple[DataParams, ModelParams, TrainingParams]:
         std  = (0.2023, 0.1994, 0.2010)
 
     data_params = DataParams(
-        dataset     = args.dataset,
-        data_dir    = "./data",
-        num_workers = 2,
-        mean        = mean,
-        std         = std,
-        input_size  = input_size,
-        num_classes = 10,
+        dataset      = args.dataset,
+        data_dir     = "./data",
+        cifar10c_dir = args.cifar10c_dir,
+        num_workers  = 2,
+        mean         = mean,
+        std          = std,
+        input_size   = input_size,
+        num_classes  = 10,
     )
 
     model_params = ModelParams(
@@ -216,7 +223,8 @@ def get_params() -> Tuple[DataParams, ModelParams, TrainingParams]:
         teacher_path  = args.teacher_path,
         temperature   = args.temperature,
         alpha         = args.alpha,
-        count_flops   = args.count_flops,
+        count_flops    = args.count_flops,
+        test_cifar10c  = args.test_cifar10c,
     )
 
     return data_params, model_params, training_params

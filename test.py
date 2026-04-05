@@ -5,9 +5,9 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 from torchvision import datasets
 
-from train import get_transforms
+from train import get_transforms, get_cifar10c_loader
 from parameters import DataParams, ModelParams, TrainingParams
-from plot import plot_confusion_matrix
+from plot import plot_confusion_matrix, plot_cifar10c_results
 
 
 @torch.no_grad()
@@ -74,5 +74,80 @@ def run_test(
 
     if training_params.plot:
         plot_confusion_matrix(all_preds, all_labels, data_params.dataset, title=config_title)
+
+    return results
+
+
+CORRUPTIONS = [
+    "gaussian_noise", "shot_noise", "impulse_noise", "speckle_noise",
+    "defocus_blur", "gaussian_blur", "motion_blur", "zoom_blur",
+    "snow", "frost", "fog", "brightness",
+    "contrast", "elastic_transform", "pixelate", "jpeg_compression",
+]
+
+
+@torch.no_grad()
+def run_cifar10c_test(
+    model:           nn.Module,
+    data_params:     DataParams,
+    training_params: TrainingParams,
+    device:          torch.device,
+    clean_acc:       float = 0.0,
+    config_title:    str   = "",
+) -> Dict[str, float]:
+    """Evaluate a trained model on all CIFAR-10-C corruptions across all severities.
+
+    Prints a table of per-corruption accuracy averaged over severities 1–5, plus
+    the overall mean corruption accuracy (mCA). Optionally saves a bar chart and
+    heatmap to ``plots/`` when ``training_params.plot`` is enabled.
+
+    Args:
+        model:           The neural network to evaluate (weights already loaded).
+        data_params:     Dataset parameters (cifar10c_dir, mean, std, num_classes).
+        training_params: Training parameters (batch_size, plot flag).
+        device:          Computation device.
+        clean_acc:       Clean test accuracy for reference line in bar chart.
+        config_title:    Config string used in plot titles and filenames.
+
+    Returns:
+        Dictionary mapping corruption name to mean accuracy across severities,
+        plus ``'mCA'`` for the overall mean corruption accuracy.
+    """
+    model.eval()
+
+    print("\n=== CIFAR-10-C Robustness Evaluation ===")
+    print(f"{'Corruption':<22} {'Sev1':>6} {'Sev2':>6} {'Sev3':>6} {'Sev4':>6} {'Sev5':>6} {'Mean':>6}")
+    print("─" * 65)
+
+    results:         Dict[str, float]       = {}
+    corruption_accs: Dict[str, List[float]] = {}
+
+    for corruption in CORRUPTIONS:
+        sev_accs = []
+        for severity in range(1, 6):
+            loader = get_cifar10c_loader(corruption, severity, data_params, training_params.batch_size)
+            correct, n = 0, 0
+            for imgs, labels in loader:
+                imgs, labels = imgs.to(device), labels.to(device)
+                preds = model(imgs).argmax(1)
+                correct += preds.eq(labels).sum().item()
+                n += imgs.size(0)
+            sev_accs.append(correct / n)
+
+        mean_acc = sum(sev_accs) / len(sev_accs)
+        results[corruption]         = mean_acc
+        corruption_accs[corruption] = sev_accs
+        sev_str = "  ".join(f"{a:.3f}" for a in sev_accs)
+        print(f"{corruption:<22} {sev_str}  {mean_acc:.3f}")
+
+    mca = sum(results.values()) / len(results)
+    print("─" * 65)
+    print(f"{'Mean Corruption Acc (mCA)':<22} {'':>42} {mca:.3f}")
+    if clean_acc:
+        print(f"{'Clean Acc':<22} {'':>42} {clean_acc:.3f}")
+    results["mCA"] = mca
+
+    if training_params.plot:
+        plot_cifar10c_results(corruption_accs, clean_acc, title=config_title)
 
     return results

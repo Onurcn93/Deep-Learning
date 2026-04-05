@@ -14,7 +14,7 @@ from models.VGG import VGG
 from models.ResNet import ResNet, BasicBlock
 from models.MobileNet import MobileNetV2
 from train import run_training
-from test  import run_test
+from test  import run_test, run_cifar10c_test
 from logger import TrainLogger
 
 
@@ -221,8 +221,14 @@ def main() -> None:
     if training_params.mode in ("train", "both"):
         run_training(model, data_params, model_params, training_params, device, config_title, logger, teacher)
 
+    clean_acc = 0.0
     if training_params.mode in ("test", "both"):
-        run_test(model, data_params, model_params, training_params, device, config_title)
+        test_results = run_test(model, data_params, model_params, training_params, device, config_title)
+        clean_acc = test_results.get("overall", 0.0)
+
+    if training_params.test_cifar10c:
+        run_cifar10c_test(model, data_params, training_params, device,
+                          clean_acc=clean_acc, config_title=config_title)
 
 
 if __name__ == "__main__":

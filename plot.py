@@ -1,10 +1,10 @@
-"""Plotting utilities for training curves and confusion matrix.
+"""Plotting utilities for training curves, confusion matrix, and CIFAR-10-C robustness.
 
 All figures are saved to the ``plots/`` directory (git-ignored).
 """
 
 import os
-from typing import List
+from typing import Dict, List
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -135,3 +135,89 @@ def plot_confusion_matrix(
     fig.savefig(path, dpi=150)
     plt.close(fig)
     print(f"[plot] Saved confusion matrix → {path}")
+
+
+def plot_cifar10c_results(
+    corruption_accs: Dict[str, List[float]],
+    clean_acc:       float,
+    out_dir:         str = PLOTS_DIR,
+    title:           str = "",
+) -> None:
+    """Save two CIFAR-10-C robustness plots: a bar chart and a severity heatmap.
+
+    Args:
+        corruption_accs: Mapping from corruption name to a list of 5 accuracy
+                         values (one per severity level, low→high).
+        clean_acc:       Clean test accuracy used as the reference baseline.
+        out_dir:         Directory to save the figures.
+        title:           Config string used in figure titles and filenames.
+    """
+    _ensure_dir(out_dir)
+    suffix = f"_{_title_to_filename(title)}" if title else ""
+
+    corruptions = list(corruption_accs.keys())
+    mean_accs   = [sum(v) / len(v) for v in corruption_accs.values()]
+    n           = len(corruptions)
+
+    # ── Plot 1: horizontal bar chart (mean acc per corruption) ──────────────
+    fig, ax = plt.subplots(figsize=(9, max(5, n * 0.45)))
+
+    colors = ["#d9534f" if a < clean_acc else "#5cb85c" for a in mean_accs]
+    bars   = ax.barh(range(n), mean_accs, color=colors, edgecolor="white", height=0.7)
+    ax.axvline(clean_acc, color="steelblue", linewidth=1.8, linestyle="--", label=f"Clean ({clean_acc:.3f})")
+
+    ax.set_yticks(range(n))
+    ax.set_yticklabels(corruptions, fontsize=9)
+    ax.set_xlabel("Accuracy")
+    ax.set_xlim(0, 1.0)
+    ax.set_title("Mean Accuracy per Corruption Type (avg over severities 1–5)")
+    ax.legend(fontsize=9)
+    ax.grid(axis="x", alpha=0.3)
+
+    # Annotate bar values
+    for i, (bar, acc) in enumerate(zip(bars, mean_accs)):
+        ax.text(max(acc - 0.02, 0.01), i, f"{acc:.3f}",
+                va="center", ha="right", fontsize=8, color="white", fontweight="bold")
+
+    if title:
+        fig.suptitle(title, fontsize=9, fontweight="bold")
+    fig.tight_layout(rect=[0, 0, 1, 0.96] if title else [0, 0, 1, 1])
+    path = os.path.join(out_dir, f"cifar10c_bar{suffix}.png")
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+    print(f"[plot] Saved CIFAR-10-C bar chart → {path}")
+
+    # ── Plot 2: heatmap (corruptions × severity) ────────────────────────────
+    matrix = np.array([corruption_accs[c] for c in corruptions])  # (n, 5)
+
+    fig, ax = plt.subplots(figsize=(7, max(5, n * 0.45)))
+
+    try:
+        import seaborn as sns
+        sns.heatmap(
+            matrix, annot=True, fmt=".3f", cmap="RdYlGn",
+            vmin=0.0, vmax=1.0,
+            xticklabels=[f"Sev {s}" for s in range(1, 6)],
+            yticklabels=corruptions,
+            ax=ax, linewidths=0.4,
+        )
+    except ImportError:
+        im = ax.imshow(matrix, cmap="RdYlGn", vmin=0.0, vmax=1.0, aspect="auto")
+        fig.colorbar(im, ax=ax)
+        ax.set_xticks(range(5))
+        ax.set_xticklabels([f"Sev {s}" for s in range(1, 6)])
+        ax.set_yticks(range(n))
+        ax.set_yticklabels(corruptions, fontsize=9)
+        for i in range(n):
+            for j in range(5):
+                ax.text(j, i, f"{matrix[i, j]:.3f}", ha="center", va="center", fontsize=7)
+
+    ax.set_xlabel("Severity")
+    ax.set_title("Accuracy per Corruption × Severity")
+    if title:
+        fig.suptitle(title, fontsize=9, fontweight="bold")
+    fig.tight_layout(rect=[0, 0, 1, 0.96] if title else [0, 0, 1, 1])
+    path = os.path.join(out_dir, f"cifar10c_heatmap{suffix}.png")
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+    print(f"[plot] Saved CIFAR-10-C heatmap → {path}")

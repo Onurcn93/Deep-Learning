@@ -1,10 +1,12 @@
 import copy
+import os
 from typing import List, Optional, Tuple
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, TensorDataset
 from torchvision import datasets, transforms
 
 from parameters import DataParams, TrainingParams
@@ -83,6 +85,52 @@ def get_loaders(
     val_loader   = DataLoader(val_ds,   batch_size=training_params.batch_size,
                               shuffle=False, num_workers=data_params.num_workers)
     return train_loader, val_loader
+
+
+def get_cifar10c_loader(
+    corruption:  str,
+    severity:    int,
+    data_params: DataParams,
+    batch_size:  int,
+) -> DataLoader:
+    """Create a DataLoader for a single CIFAR-10-C corruption at a given severity.
+
+    CIFAR-10-C stores each corruption as an (50000, 32, 32, 3) uint8 numpy array
+    where indices [0:10000] correspond to severity 1, [10000:20000] to severity 2,
+    etc.  Labels are shared across all corruptions and severities.
+
+    Args:
+        corruption:  Corruption name (e.g. ``'gaussian_noise'``).
+        severity:    Severity level 1–5.
+        data_params: Dataset parameters (cifar10c_dir, mean, std).
+        batch_size:  Mini-batch size for the returned DataLoader.
+
+    Returns:
+        DataLoader yielding normalised tensors and integer labels.
+    """
+    assert 1 <= severity <= 5, "severity must be between 1 and 5"
+
+    data_path   = os.path.join(data_params.cifar10c_dir, f"{corruption}.npy")
+    labels_path = os.path.join(data_params.cifar10c_dir, "labels.npy")
+
+    images = np.load(data_path)   # (50000, 32, 32, 3) uint8
+    labels = np.load(labels_path) # (50000,)
+
+    start = (severity - 1) * 10000
+    images = images[start : start + 10000]  # (10000, 32, 32, 3)
+    labels = labels[start : start + 10000]  # (10000,)
+
+    # HWC uint8 → CHW float32 in [0,1], then normalise
+    tf = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize(data_params.mean, data_params.std),
+    ])
+
+    tensors = torch.stack([tf(img) for img in images])
+    label_t = torch.tensor(labels, dtype=torch.long)
+
+    dataset = TensorDataset(tensors, label_t)
+    return DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=0)
 
 
 def train_one_epoch(

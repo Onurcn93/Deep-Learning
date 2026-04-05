@@ -34,6 +34,7 @@ This repository structure and implementation logic are based on the [Deep Learni
 - **Structured logger** (`--log`): formatted epoch table saved to `logs/`
 - **Transfer learning**: ResNet-18 pretrained with freeze or full fine-tune modes
 - **Knowledge distillation**: Hinton KD and teacher_prob — soft + hard loss with temperature scaling (`--distill`, `--distill_mode`)
+- **CIFAR-10-C robustness evaluation** (`--test_cifar10c`): tests model across all 15 corruption types × 5 severity levels; saves bar chart and heatmap when `--plot` is set
 
 ---
 
@@ -86,6 +87,8 @@ python main.py --mode both --dataset mnist --model mlp
 | `--temperature` | `4.0` | Distillation temperature T |
 | `--alpha` | `0.7` | Weight for soft KD loss (1-alpha for hard CE) |
 | `--count_flops` | `False` | Print MACs and param count via ptflops |
+| `--test_cifar10c` | `False` | Evaluate model on all CIFAR-10-C corruptions (15 types × 5 severities) |
+| `--cifar10c_dir` | `data/CIFAR-10-C` | Path to extracted CIFAR-10-C folder containing `.npy` files |
 
 ### Model-specific Arguments
 
@@ -140,6 +143,11 @@ python main.py --dataset cifar10 --model cnn --distill \
                --epochs 20 --lr 1e-3 --batch_size 64 \
                --scheduler cosine --weight_decay 1e-4 \
                --mode both --plot --count_flops
+
+# CIFAR-10-C robustness evaluation — all 15 corruptions × 5 severities
+# (download CIFAR-10-C from https://zenodo.org/record/2535967, extract to data/CIFAR-10-C/)
+python main.py --dataset cifar10 --transfer_mode modifyFinetune \
+               --mode test --test_cifar10c --plot
 ```
 
 ---
