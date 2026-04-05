@@ -92,6 +92,9 @@ class TrainingParams:
     alpha:         float
     count_flops:    bool
     test_cifar10c:  bool
+    augmix:         bool
+    jsd_lambda:     float
+    augmix_save_path: str
 
 
 def get_params() -> Tuple[DataParams, ModelParams, TrainingParams]:
@@ -153,6 +156,12 @@ def get_params() -> Tuple[DataParams, ModelParams, TrainingParams]:
                         help="Path to extracted CIFAR-10-C folder containing .npy corruption files")
     parser.add_argument("--test_cifar10c", action="store_true",
                         help="Evaluate model on all CIFAR-10-C corruptions (requires --mode test or both)")
+    parser.add_argument("--augmix", action="store_true",
+                        help="Train with AugMix augmentation + Jensen-Shannon consistency loss")
+    parser.add_argument("--jsd_lambda", type=float, default=12.0,
+                        help="Weight on the JSD consistency term in AugMix loss (paper default: 12.0)")
+    parser.add_argument("--augmix_save_path", type=str, default="best_model_augmix.pth",
+                        help="Checkpoint path for AugMix-trained model (kept separate from vanilla)")
 
     # Transfer learning
     parser.add_argument("--transfer_mode", choices=["none", "resizeFreeze", "modifyFinetune"],
@@ -223,8 +232,11 @@ def get_params() -> Tuple[DataParams, ModelParams, TrainingParams]:
         teacher_path  = args.teacher_path,
         temperature   = args.temperature,
         alpha         = args.alpha,
-        count_flops    = args.count_flops,
-        test_cifar10c  = args.test_cifar10c,
+        count_flops      = args.count_flops,
+        test_cifar10c    = args.test_cifar10c,
+        augmix           = args.augmix,
+        jsd_lambda       = args.jsd_lambda,
+        augmix_save_path = args.augmix_save_path,
     )
 
     return data_params, model_params, training_params

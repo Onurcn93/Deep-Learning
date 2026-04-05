@@ -6,7 +6,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.utils.data import DataLoader, TensorDataset
+from torch.utils.data import DataLoader, Dataset, TensorDataset
 from torchvision import datasets, transforms
 
 from parameters import DataParams, TrainingParams
@@ -85,6 +85,159 @@ def get_loaders(
     val_loader   = DataLoader(val_ds,   batch_size=training_params.batch_size,
                               shuffle=False, num_workers=data_params.num_workers)
     return train_loader, val_loader
+
+
+class AugMixDataset(Dataset):
+    """Dataset wrapper that returns three views of each image for AugMix training.
+
+    For each sample returns ``(img_clean, img_aug1, img_aug2, label)`` where
+    ``img_clean`` is the standard normalised image and ``img_aug1`` / ``img_aug2``
+    are two independently AugMix-augmented versions.
+
+    Args:
+        base_dataset: Underlying dataset returning ``(PIL image, label)`` pairs.
+        clean_tf:     Transform applied to produce the clean view (normalise only).
+        augmix_tf:    Transform applied twice to produce the two augmented views.
+    """
+
+    def __init__(
+        self,
+        base_dataset: Dataset,
+        clean_tf:     transforms.Compose,
+        augmix_tf:    transforms.Compose,
+    ) -> None:
+        self.dataset  = base_dataset
+        self.clean_tf = clean_tf
+        self.augmix_tf = augmix_tf
+
+    def __len__(self) -> int:
+        return len(self.dataset)  # type: ignore[arg-type]
+
+    def __getitem__(self, idx: int):
+        img, label = self.dataset[idx]
+        return self.clean_tf(img), self.augmix_tf(img), self.augmix_tf(img), label
+
+
+def get_augmix_loaders(
+    data_params:     DataParams,
+    training_params: TrainingParams,
+    transfer_mode:   str = "none",
+) -> Tuple[DataLoader, DataLoader]:
+    """Create DataLoaders for AugMix training.
+
+    The train loader returns ``(clean, aug1, aug2, label)`` tuples via
+    ``AugMixDataset``.  The val loader is unchanged (standard normalisation).
+
+    Args:
+        data_params:     Dataset parameters (mean, std, data_dir).
+        training_params: Training parameters (batch size).
+        transfer_mode:   Passed through for resize logic.
+
+    Returns:
+        Tuple of ``(augmix_train_loader, val_loader)``.
+    """
+    mean, std = data_params.mean, data_params.std
+    resize = [transforms.Resize(224)] if transfer_mode == "resizeFreeze" else []
+
+    clean_tf = transforms.Compose([
+        *resize,
+        transforms.ToTensor(),
+        transforms.Normalize(mean, std),
+    ])
+
+    augmix_tf = transforms.Compose([
+        *resize,
+        transforms.AugMix(),
+        transforms.ToTensor(),
+        transforms.Normalize(mean, std),
+    ])
+
+    val_tf = get_transforms(data_params, train=False, transfer_mode=transfer_mode)
+
+    train_base = datasets.CIFAR10(data_params.data_dir, train=True,  download=True, transform=None)
+    val_ds     = datasets.CIFAR10(data_params.data_dir, train=False, download=True, transform=val_tf)
+
+    train_ds = AugMixDataset(train_base, clean_tf, augmix_tf)
+
+    train_loader = DataLoader(train_ds, batch_size=training_params.batch_size,
+                              shuffle=True,  num_workers=data_params.num_workers)
+    val_loader   = DataLoader(val_ds,   batch_size=training_params.batch_size,
+                              shuffle=False, num_workers=data_params.num_workers)
+    return train_loader, val_loader
+
+
+def train_one_epoch_augmix(
+    model:      nn.Module,
+    loader:     DataLoader,
+    optimizer:  torch.optim.Optimizer,
+    criterion:  nn.Module,
+    device:     torch.device,
+    jsd_lambda: float = 12.0,
+    log_interval: int = 100,
+) -> Tuple[float, float]:
+    """Train one epoch with AugMix: cross-entropy on clean view + JSD consistency loss.
+
+    Each batch contains three views of every image (clean, aug1, aug2).  The
+    cross-entropy loss is computed on the clean logits only.  The JSD term
+    encourages consistent predictions across all three views.
+
+    Loss = CE(clean) + λ * JSD(p_clean, p_aug1, p_aug2)
+
+    Args:
+        model:        The neural network to train.
+        loader:       AugMix DataLoader returning ``(clean, aug1, aug2, labels)``.
+        optimizer:    Optimiser instance.
+        criterion:    Hard-label loss (CrossEntropyLoss).
+        device:       Computation device.
+        jsd_lambda:   Weight on the JSD consistency term (paper default: 12.0).
+        log_interval: Batches between progress prints.
+
+    Returns:
+        Tuple of ``(mean_loss, mean_accuracy)`` over the epoch.
+    """
+    model.train()
+    total_loss, correct, n = 0.0, 0, 0
+
+    for batch_idx, (img_clean, img_aug1, img_aug2, labels) in enumerate(loader, 1):
+        img_clean = img_clean.to(device)
+        img_aug1  = img_aug1.to(device)
+        img_aug2  = img_aug2.to(device)
+        labels    = labels.to(device)
+
+        # Three forward passes
+        logits_clean = model(img_clean)
+        logits_aug1  = model(img_aug1)
+        logits_aug2  = model(img_aug2)
+
+        # Cross-entropy on clean view
+        ce_loss = criterion(logits_clean, labels)
+
+        # Jensen-Shannon consistency across three views
+        p_clean = F.softmax(logits_clean, dim=1)
+        p_aug1  = F.softmax(logits_aug1,  dim=1)
+        p_aug2  = F.softmax(logits_aug2,  dim=1)
+        p_mix   = (p_clean + p_aug1 + p_aug2) / 3.0
+        jsd = (
+            F.kl_div(p_mix.log(), p_clean, reduction="batchmean") +
+            F.kl_div(p_mix.log(), p_aug1,  reduction="batchmean") +
+            F.kl_div(p_mix.log(), p_aug2,  reduction="batchmean")
+        ) / 3.0
+
+        loss = ce_loss + jsd_lambda * jsd
+
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+
+        batch_size  = labels.size(0)
+        total_loss += loss.item() * batch_size
+        correct    += logits_clean.argmax(1).eq(labels).sum().item()
+        n          += batch_size
+
+        if batch_idx % log_interval == 0:
+            print(f"  {batch_idx:>5}/{len(loader)} | {total_loss/n:>8.4f} | {correct/n:>6.3f} |       - |      -")
+
+    return total_loss / n, correct / n
 
 
 def get_cifar10c_loader(
@@ -503,6 +656,97 @@ def run_training(
         model.load_state_dict(best_weights)
 
     logger.log_complete(best_acc, training_params.save_path)
+    logger.close()
+
+    if training_params.plot:
+        plot_training_curves(train_losses, val_losses, train_accs, val_accs, title=config_title)
+
+
+def run_augmix_training(
+    model:           nn.Module,
+    data_params:     DataParams,
+    model_params,
+    training_params: TrainingParams,
+    device:          torch.device,
+    config_title:    str        = "",
+    logger:          TrainLogger = None,
+) -> None:
+    """Full training loop using AugMix augmentation and JSD consistency loss.
+
+    Mirrors ``run_training`` but uses ``get_augmix_loaders`` to produce three
+    views per sample and ``train_one_epoch_augmix`` for the per-epoch update.
+    The best checkpoint is saved to ``training_params.augmix_save_path`` to
+    keep it separate from the vanilla fine-tuned model.
+
+    Args:
+        model:           The neural network to train.
+        data_params:     Dataset parameters.
+        model_params:    Model architecture parameters.
+        training_params: Training hyperparameters (includes jsd_lambda, augmix_save_path).
+        device:          Computation device.
+        config_title:    Human-readable experiment title for logging/plotting.
+        logger:          TrainLogger instance.
+    """
+    train_loader, val_loader = get_augmix_loaders(data_params, training_params, model_params.transfer_mode)
+    criterion = nn.CrossEntropyLoss()
+    optimizer = torch.optim.Adam(
+        model.parameters(),
+        lr           = training_params.learning_rate,
+        weight_decay = training_params.weight_decay,
+    )
+    scheduler = build_scheduler(optimizer, training_params)
+
+    best_acc     = 0.0
+    best_weights = None
+    patience_ctr = 0
+
+    train_losses: List[float] = []
+    val_losses:   List[float] = []
+    train_accs:   List[float] = []
+    val_accs:     List[float] = []
+
+    logger.log_start(model, data_params, model_params, training_params, device)
+
+    for epoch in range(1, training_params.epochs + 1):
+        tr_loss, tr_acc = train_one_epoch_augmix(
+            model        = model,
+            loader       = train_loader,
+            optimizer    = optimizer,
+            criterion    = criterion,
+            device       = device,
+            jsd_lambda   = training_params.jsd_lambda,
+            log_interval = training_params.log_interval,
+        )
+        val_loss, val_acc = validate(model, val_loader, criterion, device)
+
+        train_losses.append(tr_loss)
+        val_losses.append(val_loss)
+        train_accs.append(tr_acc)
+        val_accs.append(val_acc)
+
+        if scheduler is not None:
+            scheduler.step()
+
+        logger.log_epoch(epoch, tr_loss, tr_acc, val_loss, val_acc)
+
+        if val_acc > best_acc:
+            best_acc     = val_acc
+            best_weights = copy.deepcopy(model.state_dict())
+            torch.save(best_weights, training_params.augmix_save_path)
+            logger.log_best(best_acc, training_params.augmix_save_path)
+            patience_ctr = 0
+        else:
+            patience_ctr += 1
+
+        if training_params.patience > 0 and patience_ctr >= training_params.patience:
+            logger._w(f"\nEarly stopping triggered after {epoch} epochs "
+                      f"(patience={training_params.patience})")
+            break
+
+    if best_weights is not None:
+        model.load_state_dict(best_weights)
+
+    logger.log_complete(best_acc, training_params.augmix_save_path)
     logger.close()
 
     if training_params.plot:

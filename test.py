@@ -12,23 +12,26 @@ from plot import plot_confusion_matrix, plot_cifar10c_results
 
 @torch.no_grad()
 def run_test(
-    model:           nn.Module,
-    data_params:     DataParams,
-    model_params:    ModelParams,
-    training_params: TrainingParams,
-    device:          torch.device,
-    config_title:    str = "",
+    model:            nn.Module,
+    data_params:      DataParams,
+    model_params:     ModelParams,
+    training_params:  TrainingParams,
+    device:           torch.device,
+    config_title:     str = "",
+    checkpoint_path:  str = "",
 ) -> Dict[str, float]:
     """Evaluate a trained model on the test split and print per-class accuracy.
 
-    Loads the best saved weights from ``training_params.save_path`` before
-    running evaluation.
+    Loads the best saved weights from ``checkpoint_path`` if provided, otherwise
+    falls back to ``training_params.save_path``.
 
     Args:
-        model:           The neural network to evaluate.
-        data_params:     Dataset parameters used to load test data.
-        training_params: Training parameters (save path, batch size).
-        device:          Computation device.
+        model:            The neural network to evaluate.
+        data_params:      Dataset parameters used to load test data.
+        training_params:  Training parameters (save path, batch size).
+        device:           Computation device.
+        config_title:     Experiment title for confusion matrix filename.
+        checkpoint_path:  Override path for model weights (e.g. augmix_save_path).
 
     Returns:
         Dictionary with key ``'overall'`` and per-class string keys mapped to
@@ -44,7 +47,8 @@ def run_test(
     loader = DataLoader(test_ds, batch_size=training_params.batch_size,
                         shuffle=False, num_workers=data_params.num_workers)
 
-    model.load_state_dict(torch.load(training_params.save_path, map_location=device))
+    path = checkpoint_path if checkpoint_path else training_params.save_path
+    model.load_state_dict(torch.load(path, map_location=device))
     model.eval()
 
     correct, n  = 0, 0
@@ -80,8 +84,8 @@ def run_test(
 
 CORRUPTIONS = [
     "gaussian_noise", "shot_noise", "impulse_noise", "speckle_noise",
-    "defocus_blur", "gaussian_blur", "motion_blur", "zoom_blur",
-    "snow", "frost", "fog", "brightness",
+    "defocus_blur", "gaussian_blur", "glass_blur", "motion_blur", "zoom_blur",
+    "snow", "frost", "fog", "brightness", "saturate", "spatter",
     "contrast", "elastic_transform", "pixelate", "jpeg_compression",
 ]
 

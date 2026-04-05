@@ -13,7 +13,7 @@ from models.CNN import MNIST_CNN, SimpleCNN
 from models.VGG import VGG
 from models.ResNet import ResNet, BasicBlock
 from models.MobileNet import MobileNetV2
-from train import run_training
+from train import run_training, run_augmix_training
 from test  import run_test, run_cifar10c_test
 from logger import TrainLogger
 
@@ -153,6 +153,8 @@ def build_config_title(
     parts.append(f"sched={sched_str}")
     if training_params.weight_decay > 0:
         parts.append(f"wd={training_params.weight_decay}")
+    if training_params.augmix:
+        parts.append(f"AugMix | λ={training_params.jsd_lambda}")
     if training_params.distill:
         if training_params.distill_mode == "teacher_prob":
             parts.append("teacher_prob")
@@ -219,11 +221,15 @@ def main() -> None:
         logger._w(f"Teacher loaded from: {training_params.teacher_path}")
 
     if training_params.mode in ("train", "both"):
-        run_training(model, data_params, model_params, training_params, device, config_title, logger, teacher)
+        if training_params.augmix:
+            run_augmix_training(model, data_params, model_params, training_params, device, config_title, logger)
+        else:
+            run_training(model, data_params, model_params, training_params, device, config_title, logger, teacher)
 
     clean_acc = 0.0
     if training_params.mode in ("test", "both"):
-        test_results = run_test(model, data_params, model_params, training_params, device, config_title)
+        ckpt = training_params.augmix_save_path if training_params.augmix else ""
+        test_results = run_test(model, data_params, model_params, training_params, device, config_title, ckpt)
         clean_acc = test_results.get("overall", 0.0)
 
     if training_params.test_cifar10c:

@@ -34,7 +34,8 @@ This repository structure and implementation logic are based on the [Deep Learni
 - **Structured logger** (`--log`): formatted epoch table saved to `logs/`
 - **Transfer learning**: ResNet-18 pretrained with freeze or full fine-tune modes
 - **Knowledge distillation**: Hinton KD and teacher_prob — soft + hard loss with temperature scaling (`--distill`, `--distill_mode`)
-- **CIFAR-10-C robustness evaluation** (`--test_cifar10c`): tests model across all 15 corruption types × 5 severity levels; saves bar chart and heatmap when `--plot` is set
+- **CIFAR-10-C robustness evaluation** (`--test_cifar10c`): tests model across all 19 corruption types × 5 severity levels; saves bar chart and heatmap when `--plot` is set
+- **AugMix training** (`--augmix`): repeats fine-tuning with AugMix augmentation + Jensen-Shannon consistency loss (`CE(clean) + λ·JSD(clean, aug1, aug2)`); saves to a separate checkpoint (`best_model_augmix.pth`) to preserve the vanilla model
 
 ---
 
@@ -87,8 +88,11 @@ python main.py --mode both --dataset mnist --model mlp
 | `--temperature` | `4.0` | Distillation temperature T |
 | `--alpha` | `0.7` | Weight for soft KD loss (1-alpha for hard CE) |
 | `--count_flops` | `False` | Print MACs and param count via ptflops |
-| `--test_cifar10c` | `False` | Evaluate model on all CIFAR-10-C corruptions (15 types × 5 severities) |
+| `--test_cifar10c` | `False` | Evaluate model on all CIFAR-10-C corruptions (19 types × 5 severities) |
 | `--cifar10c_dir` | `data/CIFAR-10-C` | Path to extracted CIFAR-10-C folder containing `.npy` files |
+| `--augmix` | `False` | Train with AugMix augmentation + JSD consistency loss |
+| `--jsd_lambda` | `12.0` | Weight on the JSD consistency term (paper default) |
+| `--augmix_save_path` | `best_model_augmix.pth` | Separate checkpoint path for AugMix-trained model |
 
 ### Model-specific Arguments
 
@@ -144,10 +148,21 @@ python main.py --dataset cifar10 --model cnn --distill \
                --scheduler cosine --weight_decay 1e-4 \
                --mode both --plot --count_flops
 
-# CIFAR-10-C robustness evaluation — all 15 corruptions × 5 severities
+# CIFAR-10-C robustness evaluation — all 19 corruptions × 5 severities
 # (download CIFAR-10-C from https://zenodo.org/record/2535967, extract to data/CIFAR-10-C/)
 python main.py --dataset cifar10 --transfer_mode modifyFinetune \
                --mode test --test_cifar10c --plot
+
+# AugMix fine-tuning — same hyperparams as modifyFinetune, adds AugMix + JSD loss
+# saves to best_model_augmix.pth (vanilla best_model.pth is preserved)
+python main.py --dataset cifar10 --transfer_mode modifyFinetune \
+               --epochs 20 --lr 1e-4 --batch_size 64 \
+               --scheduler cosine --weight_decay 1e-4 \
+               --augmix --mode both --plot
+
+# AugMix model — test on clean + CIFAR-10-C
+python main.py --dataset cifar10 --transfer_mode modifyFinetune \
+               --augmix --mode test --test_cifar10c --plot
 ```
 
 ---
