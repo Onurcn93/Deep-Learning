@@ -372,3 +372,107 @@ def run_pgd_test(
                 plot_tsne(feats_clean, feats_adv, all_labels, title=config_title)
 
     return results
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Adversarial transferability evaluation
+# ─────────────────────────────────────────────────────────────────────────────
+
+def run_transfer_test(
+    student:         nn.Module,
+    teacher:         nn.Module,
+    data_params:     DataParams,
+    model_params:    ModelParams,
+    training_params: TrainingParams,
+    device:          torch.device,
+    config_title:    str = "",
+) -> Dict[str, float]:
+    """Evaluate adversarial transferability of PGD examples from teacher to student.
+
+    Generates PGD-20 L∞ adversarial examples using the teacher model, then
+    evaluates those same examples on both the teacher and the student.
+
+    Args:
+        student:         Instantiated student model (weights NOT yet loaded).
+        teacher:         Instantiated teacher model with weights already loaded.
+        data_params:     Dataset parameters.
+        model_params:    Student model parameters (used for transforms).
+        training_params: Evaluation parameters (student_path, pgd_*, batch_size).
+        device:          Computation device.
+        config_title:    Experiment title for display.
+
+    Returns:
+        Dict with keys ``'teacher_clean'``, ``'teacher_adv'``,
+        ``'student_clean'``, ``'student_adv'``.
+    """
+    # ── Load student weights ──────────────────────────────────────────────────
+    student.load_state_dict(torch.load(training_params.student_path, map_location=device))
+    student.eval()
+    teacher.eval()
+
+    # ── Test subset loader ────────────────────────────────────────────────────
+    tf     = get_transforms(data_params, train=False,
+                            transfer_mode=model_params.transfer_mode)
+    test_ds = datasets.CIFAR10(data_params.data_dir, train=False,
+                               download=True, transform=tf)
+    n_use  = min(training_params.pgd_n_samples, len(test_ds))
+    loader = DataLoader(Subset(test_ds, range(n_use)),
+                        batch_size=training_params.batch_size,
+                        shuffle=False, num_workers=0)
+
+    eps   = training_params.pgd_eps_linf
+    alpha = 2.5 * eps / training_params.pgd_steps
+    steps = training_params.pgd_steps
+
+    print(f"\n=== Adversarial Transferability  ({n_use} samples) ===")
+    print(f"  Attack: PGD-{steps} L\u221e  eps={eps:.4f}  alpha={alpha:.5f}  source=teacher")
+    print()
+
+    n = 0
+    teacher_clean_correct = teacher_adv_correct = 0
+    student_clean_correct = student_adv_correct = 0
+
+    for imgs, labels in loader:
+        imgs, labels = imgs.to(device), labels.to(device)
+
+        # Clean predictions
+        with torch.no_grad():
+            teacher_clean_correct += teacher(imgs).argmax(1).eq(labels).sum().item()
+            student_clean_correct += student(imgs).argmax(1).eq(labels).sum().item()
+
+        # Generate adversarial examples from teacher
+        adv = pgd_attack(teacher, imgs, labels,
+                         eps=eps, alpha=alpha, steps=steps, norm="linf",
+                         mean=data_params.mean, std=data_params.std)
+
+        # Evaluate both models on teacher-generated adversarial examples
+        with torch.no_grad():
+            teacher_adv_correct += teacher(adv).argmax(1).eq(labels).sum().item()
+            student_adv_correct += student(adv).argmax(1).eq(labels).sum().item()
+
+        n += labels.size(0)
+
+    acc_tc = teacher_clean_correct / n
+    acc_ta = teacher_adv_correct   / n
+    acc_sc = student_clean_correct / n
+    acc_sa = student_adv_correct   / n
+
+    teacher_fool = acc_tc - acc_ta
+    student_fool = acc_sc - acc_sa
+    transfer_ratio = student_fool / teacher_fool if teacher_fool > 0 else 0.0
+
+    print(f"{'':22} {'Teacher':>8} {'Student':>8}")
+    print("\u2500" * 42)
+    print(f"{'Clean acc':<22} {acc_tc:>8.4f} {acc_sc:>8.4f}")
+    print(f"{'Adv acc (teacher PGD)':<22} {acc_ta:>8.4f} {acc_sa:>8.4f}")
+    print(f"{'Fooling rate':<22} {teacher_fool:>+8.4f} {student_fool:>+8.4f}")
+    print("\u2500" * 42)
+    print(f"Transfer ratio (student fool / teacher fool): {transfer_ratio:.3f}")
+    print()
+
+    return {
+        "teacher_clean": acc_tc,
+        "teacher_adv":   acc_ta,
+        "student_clean": acc_sc,
+        "student_adv":   acc_sa,
+    }

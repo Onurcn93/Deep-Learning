@@ -104,6 +104,8 @@ class TrainingParams:
     pgd_n_samples: int
     gradcam:       bool
     tsne:          bool
+    transfer:      bool
+    student_path:  str
 
 
 def get_params() -> Tuple[DataParams, ModelParams, TrainingParams]:
@@ -193,6 +195,10 @@ def get_params() -> Tuple[DataParams, ModelParams, TrainingParams]:
                         help="Generate Grad-CAM visualisations for misclassified adversarial samples")
     parser.add_argument("--tsne",          action="store_true",
                         help="Generate t-SNE plot of clean vs adversarial feature embeddings")
+    parser.add_argument("--transfer",      action="store_true",
+                        help="Evaluate adversarial transferability: generate PGD on teacher, test on student")
+    parser.add_argument("--student_path",  type=str, default="",
+                        help="Path to student model weights for transferability evaluation (must be set explicitly)")
 
     # Transfer learning
     parser.add_argument("--transfer_mode", choices=["none", "resizeFreeze", "modifyFinetune"],
@@ -277,6 +283,8 @@ def get_params() -> Tuple[DataParams, ModelParams, TrainingParams]:
         pgd_n_samples = args.pgd_n_samples,
         gradcam       = args.gradcam,
         tsne          = args.tsne,
+        transfer      = args.transfer,
+        student_path  = args.student_path,
     )
 
     return data_params, model_params, training_params

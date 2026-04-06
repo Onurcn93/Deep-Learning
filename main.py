@@ -14,7 +14,7 @@ from models.VGG import VGG
 from models.ResNet import ResNet, BasicBlock
 from models.MobileNet import MobileNetV2
 from train import run_training, run_augmix_training
-from test  import run_test, run_cifar10c_test, run_pgd_test
+from test  import run_test, run_cifar10c_test, run_pgd_test, run_transfer_test
 from utils.logger import TrainLogger
 
 
@@ -244,6 +244,26 @@ def main() -> None:
         if not training_params.model_path:
             raise ValueError("--model_path must be specified when using --pgd")
         run_pgd_test(model, data_params, model_params, training_params, device, config_title)
+
+    if training_params.transfer:
+        if not training_params.model_path:
+            raise ValueError("--model_path must be specified when using --transfer (teacher)")
+        if not training_params.student_path:
+            raise ValueError("--student_path must be specified when using --transfer")
+        if training_params.teacher_transfer_mode == "modifyFinetune":
+            _tmp = ModelParams(model="resnet", hidden_sizes=[512,256,128], dropout=0.3,
+                               activation="relu", vgg_depth="16", resnet_layers=[2,2,2,2],
+                               transfer_mode="modifyFinetune")
+            transfer_teacher = build_pretrained_model(_tmp, data_params.num_classes).to(device)
+        else:
+            _tmp = ModelParams(model="resnet", hidden_sizes=[512,256,128], dropout=0.3,
+                               activation="relu", vgg_depth="16", resnet_layers=[2,2,2,2],
+                               transfer_mode="none")
+            transfer_teacher = build_model(data_params, _tmp).to(device)
+        transfer_teacher.load_state_dict(torch.load(training_params.model_path, map_location=device))
+        transfer_teacher.eval()
+        run_transfer_test(model, transfer_teacher, data_params, model_params,
+                          training_params, device, config_title)
 
 
 if __name__ == "__main__":
