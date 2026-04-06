@@ -338,7 +338,7 @@ def plot_tsne(
 
     all_feats = np.concatenate([feats_clean, feats_adv], axis=0)
     embedded  = TSNE(n_components=2, perplexity=30, random_state=42,
-                     n_iter=1000).fit_transform(all_feats)
+                     max_iter=1000).fit_transform(all_feats)
 
     n         = len(feats_clean)
     emb_clean = embedded[:n]

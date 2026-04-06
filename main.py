@@ -206,19 +206,23 @@ def main() -> None:
     # Load teacher for knowledge distillation
     teacher = None
     if training_params.distill:
-        teacher_model_params = ModelParams(
-            model         = "resnet",
-            hidden_sizes  = [512, 256, 128],
-            dropout       = 0.3,
-            activation    = "relu",
-            vgg_depth     = "16",
-            resnet_layers = [2, 2, 2, 2],
-            transfer_mode = "none",
-        )
-        teacher = build_model(data_params, teacher_model_params).to(device)
+        if training_params.teacher_transfer_mode == "modifyFinetune":
+            _teacher_mp = ModelParams(
+                model="resnet", hidden_sizes=[512,256,128], dropout=0.3,
+                activation="relu", vgg_depth="16", resnet_layers=[2,2,2,2],
+                transfer_mode="modifyFinetune",
+            )
+            teacher = build_pretrained_model(_teacher_mp, data_params.num_classes).to(device)
+        else:
+            _teacher_mp = ModelParams(
+                model="resnet", hidden_sizes=[512,256,128], dropout=0.3,
+                activation="relu", vgg_depth="16", resnet_layers=[2,2,2,2],
+                transfer_mode="none",
+            )
+            teacher = build_model(data_params, _teacher_mp).to(device)
         teacher.load_state_dict(torch.load(training_params.teacher_path, map_location=device))
         teacher.eval()
-        logger._w(f"Teacher loaded from: {training_params.teacher_path}")
+        logger._w(f"Teacher loaded from: {training_params.teacher_path}  [{training_params.teacher_transfer_mode}]")
 
     if training_params.mode in ("train", "both"):
         if training_params.augmix:

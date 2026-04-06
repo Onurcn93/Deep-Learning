@@ -85,9 +85,10 @@ class TrainingParams:
     device:        str
     plot:          bool
     log:           bool
-    distill:       bool
-    distill_mode:  str   # 'hinton' | 'teacher_prob'
-    teacher_path:  str
+    distill:               bool
+    distill_mode:          str   # 'hinton' | 'teacher_prob'
+    teacher_path:          str
+    teacher_transfer_mode: str   # 'none' | 'modifyFinetune'
     temperature:   float
     alpha:         float
     count_flops:    bool
@@ -154,6 +155,8 @@ def get_params() -> Tuple[DataParams, ModelParams, TrainingParams]:
                         help="KD loss type: hinton (soft KL+hard CE) or teacher_prob (dynamic label smoothing)")
     parser.add_argument("--teacher_path", type=str, default="teachers/resnet_teacher.pth",
                         help="Path to saved teacher model weights (inside teachers/ folder)")
+    parser.add_argument("--teacher_transfer_mode", choices=["none", "modifyFinetune"], default="none",
+                        help="How the teacher was trained: none=custom ResNet, modifyFinetune=pretrained ResNet-18")
     parser.add_argument("--temperature",  type=float, default=4.0,
                         help="Distillation temperature T (softens teacher/student distributions)")
     parser.add_argument("--alpha",        type=float, default=0.7,
@@ -255,9 +258,10 @@ def get_params() -> Tuple[DataParams, ModelParams, TrainingParams]:
         device        = args.device,
         plot          = args.plot,
         log           = args.log,
-        distill       = args.distill,
-        distill_mode  = args.distill_mode,
-        teacher_path  = args.teacher_path,
+        distill               = args.distill,
+        distill_mode          = args.distill_mode,
+        teacher_path          = args.teacher_path,
+        teacher_transfer_mode = args.teacher_transfer_mode,
         temperature   = args.temperature,
         alpha         = args.alpha,
         count_flops      = args.count_flops,

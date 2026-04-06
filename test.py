@@ -306,7 +306,7 @@ def run_pgd_test(
     print(f"{'Eval':<22} {'Acc':>7}  {'Drop':>7}")
     print("─" * 40)
     print(f"{'Clean':<22} {acc_clean:>7.4f}")
-    print(f"{'PGD-L∞'::<22} {acc_linf:>7.4f}  {acc_clean-acc_linf:>+7.4f}")
+    print(f"{'PGD-L∞':<22} {acc_linf:>7.4f}  {acc_clean-acc_linf:>+7.4f}")
     print(f"{'PGD-L2':<22} {acc_l2:>7.4f}  {acc_clean-acc_l2:>+7.4f}")
     print("─" * 40)
 

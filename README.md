@@ -88,6 +88,7 @@ python main.py --mode both --dataset mnist --model mlp
 | `--distill` | `False` | Train with knowledge distillation |
 | `--distill_mode` | `hinton` | `hinton` (soft KL + hard CE) or `teacher_prob` (dynamic label smoothing) |
 | `--teacher_path` | `teachers/resnet_teacher.pth` | Path to saved teacher weights |
+| `--teacher_transfer_mode` | `none` | `none` (custom ResNet) or `modifyFinetune` (pretrained ResNet-18 teacher) |
 | `--temperature` | `4.0` | Distillation temperature T |
 | `--alpha` | `0.7` | Weight for soft KD loss (1-alpha for hard CE) |
 | `--count_flops` | `False` | Print MACs and param count via ptflops |
@@ -175,6 +176,16 @@ python main.py --dataset cifar10 --transfer_mode modifyFinetune \
 # AugMix model — test on clean + CIFAR-10-C
 python main.py --dataset cifar10 --transfer_mode modifyFinetune \
                --augmix --mode test --test_cifar10c --plot
+
+# KD with AugMix teacher (pretrained-style ResNet-18)
+# (copy best_model_augmix.pth to teachers/resnet_augmix_teacher.pth first)
+python main.py --dataset cifar10 --model cnn --distill \
+               --teacher_path teachers/resnet_augmix_teacher.pth \
+               --teacher_transfer_mode modifyFinetune \
+               --temperature 4.0 --alpha 0.7 \
+               --epochs 25 --lr 1e-3 --batch_size 64 \
+               --scheduler cosine --warmup_epochs 5 --weight_decay 1e-4 \
+               --mode both --plot
 
 # PGD-20 adversarial evaluation — vanilla modifyFinetune model
 python main.py --dataset cifar10 --transfer_mode modifyFinetune \
