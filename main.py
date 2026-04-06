@@ -14,8 +14,8 @@ from models.VGG import VGG
 from models.ResNet import ResNet, BasicBlock
 from models.MobileNet import MobileNetV2
 from train import run_training, run_augmix_training
-from test  import run_test, run_cifar10c_test
-from logger import TrainLogger
+from test  import run_test, run_cifar10c_test, run_pgd_test
+from utils.logger import TrainLogger
 
 
 # Fix for macOS SSL certificate verification error when downloading MNIST
@@ -235,6 +235,11 @@ def main() -> None:
     if training_params.test_cifar10c:
         run_cifar10c_test(model, data_params, training_params, device,
                           clean_acc=clean_acc, config_title=config_title)
+
+    if training_params.pgd:
+        if not training_params.model_path:
+            raise ValueError("--model_path must be specified when using --pgd")
+        run_pgd_test(model, data_params, model_params, training_params, device, config_title)
 
 
 if __name__ == "__main__":

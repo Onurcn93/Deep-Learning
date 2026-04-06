@@ -1,6 +1,6 @@
 import argparse
 from dataclasses import dataclass, field
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 
 @dataclass
@@ -95,6 +95,14 @@ class TrainingParams:
     augmix:         bool
     jsd_lambda:     float
     augmix_save_path: str
+    pgd:           bool
+    model_path:    str
+    pgd_eps_linf:  float
+    pgd_eps_l2:    float
+    pgd_steps:     int
+    pgd_n_samples: int
+    gradcam:       bool
+    tsne:          bool
 
 
 def get_params() -> Tuple[DataParams, ModelParams, TrainingParams]:
@@ -150,6 +158,8 @@ def get_params() -> Tuple[DataParams, ModelParams, TrainingParams]:
                         help="Distillation temperature T (softens teacher/student distributions)")
     parser.add_argument("--alpha",        type=float, default=0.7,
                         help="Weight for soft KD loss; (1-alpha) weights the hard CE loss")
+    parser.add_argument("--save_path",    type=str, default="best_model.pth",
+                        help="Path for saving/loading the best model weights (default: best_model.pth)")
     parser.add_argument("--count_flops",  action="store_true",
                         help="Print MACs and parameter count via ptflops before training")
     parser.add_argument("--cifar10c_dir", type=str, default="data/CIFAR-10-C",
@@ -162,6 +172,24 @@ def get_params() -> Tuple[DataParams, ModelParams, TrainingParams]:
                         help="Weight on the JSD consistency term in AugMix loss (paper default: 12.0)")
     parser.add_argument("--augmix_save_path", type=str, default="best_model_augmix.pth",
                         help="Checkpoint path for AugMix-trained model (kept separate from vanilla)")
+
+    # PGD adversarial evaluation
+    parser.add_argument("--pgd",           action="store_true",
+                        help="Evaluate model under PGD adversarial attack")
+    parser.add_argument("--model_path",    type=str, default="",
+                        help="Path to model weights for PGD/GradCAM/t-SNE evaluation (must be set explicitly)")
+    parser.add_argument("--pgd_eps_linf",  type=float, default=4/255,
+                        help="L∞ perturbation budget in pixel [0,1] space (default: 4/255)")
+    parser.add_argument("--pgd_eps_l2",    type=float, default=0.25,
+                        help="L2 perturbation budget in pixel [0,1] space (default: 0.25)")
+    parser.add_argument("--pgd_steps",     type=int,   default=20,
+                        help="Number of PGD iterations (default: 20)")
+    parser.add_argument("--pgd_n_samples", type=int,   default=1000,
+                        help="Number of test images to evaluate under PGD (default: 1000)")
+    parser.add_argument("--gradcam",       action="store_true",
+                        help="Generate Grad-CAM visualisations for misclassified adversarial samples")
+    parser.add_argument("--tsne",          action="store_true",
+                        help="Generate t-SNE plot of clean vs adversarial feature embeddings")
 
     # Transfer learning
     parser.add_argument("--transfer_mode", choices=["none", "resizeFreeze", "modifyFinetune"],
@@ -221,7 +249,7 @@ def get_params() -> Tuple[DataParams, ModelParams, TrainingParams]:
         scheduler        = args.scheduler,
         warmup_epochs    = args.warmup_epochs,
         patience      = args.patience,
-        save_path     = "best_model.pth",
+        save_path     = args.save_path,
         log_interval  = 100,
         seed          = args.seed,
         device        = args.device,
@@ -237,6 +265,14 @@ def get_params() -> Tuple[DataParams, ModelParams, TrainingParams]:
         augmix           = args.augmix,
         jsd_lambda       = args.jsd_lambda,
         augmix_save_path = args.augmix_save_path,
+        pgd           = args.pgd,
+        model_path    = args.model_path,
+        pgd_eps_linf  = args.pgd_eps_linf,
+        pgd_eps_l2    = args.pgd_eps_l2,
+        pgd_steps     = args.pgd_steps,
+        pgd_n_samples = args.pgd_n_samples,
+        gradcam       = args.gradcam,
+        tsne          = args.tsne,
     )
 
     return data_params, model_params, training_params

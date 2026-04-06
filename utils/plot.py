@@ -1,10 +1,10 @@
-"""Plotting utilities for training curves, confusion matrix, and CIFAR-10-C robustness.
+"""Plotting utilities for training curves, confusion matrix, CIFAR-10-C, and adversarial.
 
 All figures are saved to the ``plots/`` directory (git-ignored).
 """
 
 import os
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -221,3 +221,161 @@ def plot_cifar10c_results(
     fig.savefig(path, dpi=150)
     plt.close(fig)
     print(f"[plot] Saved CIFAR-10-C heatmap → {path}")
+
+
+def plot_gradcam(
+    clean_imgs:  List[np.ndarray],
+    adv_imgs:    List[np.ndarray],
+    clean_cams:  List[np.ndarray],
+    adv_cams:    List[np.ndarray],
+    labels:      List[int],
+    clean_preds: List[int],
+    adv_preds:   List[int],
+    class_names: List[str],
+    out_dir:     str = PLOTS_DIR,
+    title:       str = "",
+) -> None:
+    """Save a Grad-CAM comparison figure: clean vs adversarial for N samples.
+
+    Each row shows one sample: clean image | clean CAM overlay |
+    adversarial image | adversarial CAM overlay.
+
+    Args:
+        clean_imgs:  List of (H, W, 3) float32 arrays in [0, 1] pixel space.
+        adv_imgs:    List of (H, W, 3) float32 arrays in [0, 1] pixel space.
+        clean_cams:  List of (H', W') Grad-CAM heatmaps in [0, 1].
+        adv_cams:    List of (H', W') Grad-CAM heatmaps in [0, 1].
+        labels:      Ground-truth class indices.
+        clean_preds: Predicted class indices on clean images.
+        adv_preds:   Predicted class indices on adversarial images.
+        class_names: Human-readable class name list indexed by class idx.
+        out_dir:     Directory to save the figure.
+        title:       Config string for figure title and filename.
+    """
+    from PIL import Image as PILImage
+
+    _ensure_dir(out_dir)
+    n = len(clean_imgs)
+    if n == 0:
+        return
+
+    fig, axes = plt.subplots(n, 4, figsize=(12, 3 * n))
+    if n == 1:
+        axes = axes[np.newaxis, :]
+
+    col_titles = ["Clean", "Clean CAM", "Adversarial", "Adv CAM"]
+    for j, ct in enumerate(col_titles):
+        axes[0, j].set_title(ct, fontsize=10, fontweight="bold")
+
+    cmap = plt.get_cmap("jet")
+
+    for i in range(n):
+        true_name  = class_names[labels[i]]
+        clean_name = class_names[clean_preds[i]]
+        adv_name   = class_names[adv_preds[i]]
+        H, W       = clean_imgs[i].shape[:2]
+
+        def _overlay(img_hw3, cam_hw):
+            cam_pil     = PILImage.fromarray((cam_hw * 255).astype(np.uint8), mode="L")
+            cam_resized = np.array(cam_pil.resize((W, H), PILImage.BILINEAR)) / 255.0
+            heat        = cmap(cam_resized)[..., :3]             # (H, W, 3)
+            return np.clip(0.5 * img_hw3 + 0.5 * heat, 0, 1)
+
+        axes[i, 0].imshow(clean_imgs[i])
+        axes[i, 0].set_ylabel(f"True: {true_name}", fontsize=8)
+        axes[i, 0].set_xlabel(f"Pred: {clean_name}", fontsize=8, color="green")
+
+        axes[i, 1].imshow(_overlay(clean_imgs[i], clean_cams[i]))
+        axes[i, 1].set_xlabel(f"Pred: {clean_name}", fontsize=8, color="green")
+
+        axes[i, 2].imshow(adv_imgs[i])
+        axes[i, 2].set_xlabel(f"Pred: {adv_name}", fontsize=8, color="red")
+
+        axes[i, 3].imshow(_overlay(adv_imgs[i], adv_cams[i]))
+        axes[i, 3].set_xlabel(f"Pred: {adv_name}", fontsize=8, color="red")
+
+        for j in range(4):
+            axes[i, j].set_xticks([])
+            axes[i, j].set_yticks([])
+
+    if title:
+        fig.suptitle(title, fontsize=9, fontweight="bold")
+    fig.tight_layout(rect=[0, 0, 1, 0.96] if title else [0, 0, 1, 1])
+
+    suffix = f"_{_title_to_filename(title)}" if title else ""
+    path   = os.path.join(out_dir, f"gradcam{suffix}.png")
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+    print(f"[plot] Saved Grad-CAM figure → {path}")
+
+
+def plot_tsne(
+    feats_clean: np.ndarray,
+    feats_adv:   np.ndarray,
+    labels:      np.ndarray,
+    out_dir:     str = PLOTS_DIR,
+    title:       str = "",
+) -> None:
+    """Save a t-SNE scatter of clean vs adversarial feature embeddings.
+
+    Clean samples are shown as circles and adversarial as crosses, both
+    coloured by true class.
+
+    Args:
+        feats_clean: (N, D) feature matrix for clean images.
+        feats_adv:   (N, D) feature matrix for adversarial images.
+        labels:      (N,) ground-truth class indices.
+        out_dir:     Directory to save the figure.
+        title:       Config string for figure title and filename.
+    """
+    try:
+        from sklearn.manifold import TSNE
+    except ImportError:
+        print("[plot] sklearn not installed — skipping t-SNE. Run: pip install scikit-learn")
+        return
+
+    _ensure_dir(out_dir)
+
+    all_feats = np.concatenate([feats_clean, feats_adv], axis=0)
+    embedded  = TSNE(n_components=2, perplexity=30, random_state=42,
+                     n_iter=1000).fit_transform(all_feats)
+
+    n         = len(feats_clean)
+    emb_clean = embedded[:n]
+    emb_adv   = embedded[n:]
+
+    num_classes = int(labels.max()) + 1
+    colors      = plt.get_cmap("tab10")(np.linspace(0, 1, num_classes))
+    label_names = CIFAR10_CLASSES if num_classes == 10 else [str(i) for i in range(num_classes)]
+
+    fig, ax = plt.subplots(figsize=(9, 7))
+
+    for c in range(num_classes):
+        mask = labels == c
+        ax.scatter(emb_clean[mask, 0], emb_clean[mask, 1],
+                   color=colors[c], marker="o", s=12, alpha=0.6,
+                   label=f"{label_names[c]} clean")
+        ax.scatter(emb_adv[mask, 0], emb_adv[mask, 1],
+                   color=colors[c], marker="x", s=12, alpha=0.6,
+                   label=f"{label_names[c]} adv")
+
+    # Compact legend: one entry per class (ignore clean/adv split in legend)
+    handles, leg_labels = ax.get_legend_handles_labels()
+    # Take every other entry (clean entries) for the legend
+    ax.legend(handles[::2], label_names, fontsize=7, ncol=2,
+              loc="upper right", markerscale=1.5)
+
+    ax.set_title("t-SNE: clean (○) vs adversarial (×) features")
+    ax.set_xlabel("t-SNE dim 1")
+    ax.set_ylabel("t-SNE dim 2")
+    ax.grid(True, alpha=0.2)
+
+    if title:
+        fig.suptitle(title, fontsize=9, fontweight="bold")
+    fig.tight_layout(rect=[0, 0, 1, 0.96] if title else [0, 0, 1, 1])
+
+    suffix = f"_{_title_to_filename(title)}" if title else ""
+    path   = os.path.join(out_dir, f"tsne{suffix}.png")
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+    print(f"[plot] Saved t-SNE figure → {path}")

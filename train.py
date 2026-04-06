@@ -10,8 +10,8 @@ from torch.utils.data import DataLoader, Dataset, TensorDataset
 from torchvision import datasets, transforms
 
 from parameters import DataParams, TrainingParams
-from plot import plot_training_curves
-from logger import TrainLogger
+from utils.plot import plot_training_curves
+from utils.logger import TrainLogger
 
 
 def get_transforms(

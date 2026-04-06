@@ -36,6 +36,9 @@ This repository structure and implementation logic are based on the [Deep Learni
 - **Knowledge distillation**: Hinton KD and teacher_prob — soft + hard loss with temperature scaling (`--distill`, `--distill_mode`)
 - **CIFAR-10-C robustness evaluation** (`--test_cifar10c`): tests model across all 19 corruption types × 5 severity levels; saves bar chart and heatmap when `--plot` is set
 - **AugMix training** (`--augmix`): repeats fine-tuning with AugMix augmentation + Jensen-Shannon consistency loss (`CE(clean) + λ·JSD(clean, aug1, aug2)`); saves to a separate checkpoint (`best_model_augmix.pth`) to preserve the vanilla model
+- **PGD adversarial evaluation** (`--pgd`): evaluates a saved model under PGD-20 with L∞ (ε=4/255) and L2 (ε=0.25) threat models; reports clean accuracy and accuracy drop; model loaded from `--model_path` (must be set explicitly)
+- **Grad-CAM** (`--gradcam`): generates clean vs adversarial attention maps for samples fooled by L∞ PGD; saves overlay grid to `plots/` when `--plot` is set
+- **t-SNE** (`--tsne`): embeds penultimate-layer features of clean and adversarial images; plots class-coloured scatter (circles = clean, × = adversarial) to `plots/`
 
 ---
 
@@ -93,6 +96,15 @@ python main.py --mode both --dataset mnist --model mlp
 | `--augmix` | `False` | Train with AugMix augmentation + JSD consistency loss |
 | `--jsd_lambda` | `12.0` | Weight on the JSD consistency term (paper default) |
 | `--augmix_save_path` | `best_model_augmix.pth` | Separate checkpoint path for AugMix-trained model |
+| `--save_path` | `best_model.pth` | Path for saving/loading best model weights |
+| `--pgd` | `False` | Evaluate model under PGD-20 (L∞ and L2) |
+| `--model_path` | *(required with --pgd)* | Explicit path to model weights for PGD/GradCAM/t-SNE |
+| `--pgd_eps_linf` | `4/255` | L∞ perturbation budget in pixel [0,1] space |
+| `--pgd_eps_l2` | `0.25` | L2 perturbation budget in pixel [0,1] space |
+| `--pgd_steps` | `20` | Number of PGD iterations |
+| `--pgd_n_samples` | `1000` | Number of test images to run PGD on |
+| `--gradcam` | `False` | Generate Grad-CAM overlays for adversarial misclassifications |
+| `--tsne` | `False` | Generate t-SNE plot of clean vs adversarial feature embeddings |
 
 ### Model-specific Arguments
 
@@ -163,6 +175,18 @@ python main.py --dataset cifar10 --transfer_mode modifyFinetune \
 # AugMix model — test on clean + CIFAR-10-C
 python main.py --dataset cifar10 --transfer_mode modifyFinetune \
                --augmix --mode test --test_cifar10c --plot
+
+# PGD-20 adversarial evaluation — vanilla modifyFinetune model
+python main.py --dataset cifar10 --transfer_mode modifyFinetune \
+               --mode test --save_path best_model_finetune.pth \
+               --pgd --model_path best_model_finetune.pth \
+               --pgd_n_samples 1000 --plot
+
+# PGD + Grad-CAM + t-SNE on AugMix model
+python main.py --dataset cifar10 --transfer_mode modifyFinetune \
+               --mode test --save_path best_model_augmix.pth \
+               --pgd --model_path best_model_augmix.pth \
+               --pgd_n_samples 1000 --gradcam --tsne --plot
 ```
 
 ---
@@ -172,19 +196,22 @@ python main.py --dataset cifar10 --transfer_mode modifyFinetune \
 ```
 Deep-Learning/
 ├── main.py           # Entry point: model build, transfer learning, train/test dispatch
-├── train.py          # Training loop, validation, LR schedulers, data loaders, transforms
-├── test.py           # Test evaluation with per-class accuracy
-├── plot.py           # Training curves and confusion matrix (saved to plots/)
-├── logger.py         # Structured epoch table logger (terminal + logs/)
+├── train.py          # Training loop, validation, LR schedulers, data loaders, AugMix
+├── test.py           # Test evaluation, CIFAR-10-C, PGD adversarial evaluation
+├── attack.py         # PGD adversarial attack (L∞ and L2, Madry et al. 2018)
 ├── parameters.py     # Dataclasses and argparse for all hyperparameters
 ├── pretrained.py     # Standalone pretrained ResNet-18 eval script
-├── NN_Visualizer.py  # torchviz architecture graph for MLP
 ├── models/
 │   ├── MLP.py        # Multi-Layer Perceptron
 │   ├── CNN.py        # LeNet-style CNN (MNIST) / SimpleCNN (CIFAR-10)
 │   ├── VGG.py        # VGG-11/13/16/19
 │   ├── ResNet.py     # ResNet with BasicBlock
 │   └── MobileNet.py  # MobileNetV2 with stride-1 stem for 32×32
+├── utils/
+│   ├── plot.py       # Training curves, confusion matrix, CIFAR-10-C, Grad-CAM, t-SNE
+│   ├── logger.py     # Structured epoch table logger (terminal + logs/)
+│   ├── gradcam.py    # Grad-CAM with forward/backward hooks (Selvaraju et al. 2017)
+│   └── NN_Visualizer.py  # torchviz architecture graph for MLP
 ├── teachers/         # Gitignored — place teacher .pth weights here
 └── requirements.txt
 ```
@@ -199,6 +226,8 @@ Deep-Learning/
 - numpy >= 1.24
 - matplotlib >= 3.7
 - ptflops >= 0.7 *(for FLOPs counting)*
-- seaborn *(optional, for nicer confusion matrix)*
+- seaborn *(optional, for nicer confusion matrix and heatmaps)*
+- scikit-learn *(optional, for t-SNE visualisation)*
+- Pillow *(usually bundled with torchvision, used for Grad-CAM overlay resize)*
 
 

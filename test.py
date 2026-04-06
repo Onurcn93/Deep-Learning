@@ -1,13 +1,17 @@
 from typing import Dict, List
 
+import numpy as np
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Subset
 from torchvision import datasets
 
 from train import get_transforms, get_cifar10c_loader
 from parameters import DataParams, ModelParams, TrainingParams
-from plot import plot_confusion_matrix, plot_cifar10c_results
+from utils.plot import (plot_confusion_matrix, plot_cifar10c_results,
+                        plot_gradcam, plot_tsne, CIFAR10_CLASSES)
+from attack import pgd_attack
+from utils.gradcam import GradCAM, get_target_layer
 
 
 @torch.no_grad()
@@ -153,5 +157,218 @@ def run_cifar10c_test(
 
     if training_params.plot:
         plot_cifar10c_results(corruption_accs, clean_acc, title=config_title)
+
+    return results
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PGD adversarial evaluation
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _extract_features(
+    model:      nn.Module,
+    imgs_cpu:   torch.Tensor,
+    batch_size: int,
+    device:     torch.device,
+) -> np.ndarray:
+    """Extract penultimate-layer (avgpool) features via a forward hook.
+
+    Args:
+        model:      Model with an ``avgpool`` attribute (e.g. ResNet-18).
+        imgs_cpu:   Normalised images on CPU, shape (N, C, H, W).
+        batch_size: Mini-batch size for the forward passes.
+        device:     Computation device.
+
+    Returns:
+        (N, D) float32 numpy array of feature vectors.
+    """
+    feats: List[torch.Tensor] = []
+
+    def _hook(module, inp, out):
+        feats.append(out.detach().squeeze(-1).squeeze(-1).cpu())
+
+    hook = model.avgpool.register_forward_hook(_hook)
+    model.eval()
+    with torch.no_grad():
+        for i in range(0, len(imgs_cpu), batch_size):
+            model(imgs_cpu[i : i + batch_size].to(device))
+    hook.remove()
+    return torch.cat(feats).numpy()
+
+
+def run_pgd_test(
+    model:           nn.Module,
+    data_params:     DataParams,
+    model_params:    ModelParams,
+    training_params: TrainingParams,
+    device:          torch.device,
+    config_title:    str = "",
+) -> Dict[str, float]:
+    """Evaluate a model under PGD-20 adversarial attack (L∞ and L2).
+
+    Loads weights from ``training_params.model_path``, evaluates clean accuracy
+    and adversarial accuracy on a subset of the test set, and optionally
+    generates Grad-CAM and t-SNE visualisations.
+
+    Args:
+        model:           Instantiated model matching the saved checkpoint.
+        data_params:     Dataset parameters (mean, std, data_dir, etc.).
+        model_params:    Architecture parameters (used for transforms + GradCAM).
+        training_params: Training/evaluation parameters (pgd_* flags).
+        device:          Computation device.
+        config_title:    Experiment title for plot filenames.
+
+    Returns:
+        Dict with keys ``'clean'``, ``'pgd_linf'``, ``'pgd_l2'``.
+    """
+    # ── Load weights ──────────────────────────────────────────────────────────
+    model.load_state_dict(torch.load(training_params.model_path, map_location=device))
+    model.eval()
+
+    # ── Build test subset loader ───────────────────────────────────────────────
+    tf      = get_transforms(data_params, train=False,
+                             transfer_mode=model_params.transfer_mode)
+    test_ds = datasets.CIFAR10(data_params.data_dir, train=False,
+                               download=True, transform=tf)
+    n_use   = min(training_params.pgd_n_samples, len(test_ds))
+    loader  = DataLoader(Subset(test_ds, range(n_use)),
+                         batch_size=training_params.batch_size,
+                         shuffle=False, num_workers=0)
+
+    eps_linf  = training_params.pgd_eps_linf
+    eps_l2    = training_params.pgd_eps_l2
+    steps     = training_params.pgd_steps
+    alpha_linf = 2.5 * eps_linf / steps
+    alpha_l2   = 2.5 * eps_l2   / steps
+
+    # ── Accumulators ──────────────────────────────────────────────────────────
+    n = clean_correct = linf_correct = l2_correct = 0
+    gradcam_samples: List[dict] = []
+
+    clean_batches: List[torch.Tensor] = []
+    adv_linf_batches: List[torch.Tensor] = []
+    labels_batches: List[torch.Tensor] = []
+
+    print(f"\n=== PGD Adversarial Evaluation  ({n_use} samples) ===")
+    print(f"  L∞  eps={eps_linf:.4f}  alpha={alpha_linf:.5f}  steps={steps}")
+    print(f"  L2  eps={eps_l2}        alpha={alpha_l2:.5f}  steps={steps}")
+    print()
+
+    # ── Main eval loop ─────────────────────────────────────────────────────────
+    for imgs, labels in loader:
+        imgs, labels = imgs.to(device), labels.to(device)
+
+        with torch.no_grad():
+            clean_preds = model(imgs).argmax(1)
+
+        adv_linf = pgd_attack(model, imgs, labels,
+                               eps=eps_linf, alpha=alpha_linf, steps=steps,
+                               norm="linf",
+                               mean=data_params.mean, std=data_params.std)
+        with torch.no_grad():
+            linf_preds = model(adv_linf).argmax(1)
+
+        adv_l2 = pgd_attack(model, imgs, labels,
+                             eps=eps_l2, alpha=alpha_l2, steps=steps,
+                             norm="l2",
+                             mean=data_params.mean, std=data_params.std)
+        with torch.no_grad():
+            l2_preds = model(adv_l2).argmax(1)
+
+        clean_correct += clean_preds.eq(labels).sum().item()
+        linf_correct  += linf_preds.eq(labels).sum().item()
+        l2_correct    += l2_preds.eq(labels).sum().item()
+        n             += labels.size(0)
+
+        clean_batches.append(imgs.cpu())
+        adv_linf_batches.append(adv_linf.cpu())
+        labels_batches.append(labels.cpu())
+
+        # Collect GradCAM candidates: clean correct, L∞ fooled
+        if training_params.gradcam and len(gradcam_samples) < 4:
+            for i in range(labels.size(0)):
+                if len(gradcam_samples) >= 4:
+                    break
+                if clean_preds[i] == labels[i] and linf_preds[i] != labels[i]:
+                    gradcam_samples.append({
+                        "clean_img": imgs[i].cpu(),
+                        "adv_img":   adv_linf[i].cpu(),
+                        "label":     labels[i].item(),
+                        "clean_pred": clean_preds[i].item(),
+                        "adv_pred":   linf_preds[i].item(),
+                    })
+
+    # ── Results table ─────────────────────────────────────────────────────────
+    acc_clean = clean_correct / n
+    acc_linf  = linf_correct  / n
+    acc_l2    = l2_correct    / n
+
+    print(f"{'Eval':<22} {'Acc':>7}  {'Drop':>7}")
+    print("─" * 40)
+    print(f"{'Clean':<22} {acc_clean:>7.4f}")
+    print(f"{'PGD-L∞'::<22} {acc_linf:>7.4f}  {acc_clean-acc_linf:>+7.4f}")
+    print(f"{'PGD-L2':<22} {acc_l2:>7.4f}  {acc_clean-acc_l2:>+7.4f}")
+    print("─" * 40)
+
+    results = {"clean": acc_clean, "pgd_linf": acc_linf, "pgd_l2": acc_l2}
+
+    # ── Grad-CAM ──────────────────────────────────────────────────────────────
+    if training_params.gradcam and gradcam_samples:
+        mean_t = torch.tensor(data_params.mean).view(3, 1, 1)
+        std_t  = torch.tensor(data_params.std).view(3, 1, 1)
+
+        try:
+            target_layer = get_target_layer(model)
+        except ValueError as e:
+            print(f"[gradcam] Skipped — {e}")
+        else:
+            gradcam = GradCAM(model, target_layer)
+            clean_imgs_px, adv_imgs_px = [], []
+            clean_cams,    adv_cams    = [], []
+            labels_gc, clean_preds_gc, adv_preds_gc = [], [], []
+
+            for s in gradcam_samples:
+                img_t = s["clean_img"].unsqueeze(0).to(device)
+                cam_c, pred_c = gradcam.generate(img_t)
+                adv_t = s["adv_img"].unsqueeze(0).to(device)
+                cam_a, pred_a = gradcam.generate(adv_t)
+
+                def _to_pixel(t):
+                    return (t * std_t + mean_t).permute(1, 2, 0).clamp(0, 1).numpy()
+
+                clean_imgs_px.append(_to_pixel(s["clean_img"]))
+                adv_imgs_px.append(_to_pixel(s["adv_img"]))
+                clean_cams.append(cam_c)
+                adv_cams.append(cam_a)
+                labels_gc.append(s["label"])
+                clean_preds_gc.append(pred_c)
+                adv_preds_gc.append(pred_a)
+
+            gradcam.remove_hooks()
+
+            if training_params.plot:
+                plot_gradcam(
+                    clean_imgs_px, adv_imgs_px,
+                    clean_cams,    adv_cams,
+                    labels_gc, clean_preds_gc, adv_preds_gc,
+                    class_names=CIFAR10_CLASSES,
+                    title=config_title,
+                )
+
+    # ── t-SNE ─────────────────────────────────────────────────────────────────
+    if training_params.tsne:
+        if not hasattr(model, "avgpool"):
+            print("[tsne] Skipped — model has no avgpool layer for feature extraction.")
+        else:
+            all_clean    = torch.cat(clean_batches)
+            all_adv_linf = torch.cat(adv_linf_batches)
+            all_labels   = torch.cat(labels_batches).numpy()
+
+            print("[tsne] Extracting features …")
+            feats_clean = _extract_features(model, all_clean,    training_params.batch_size, device)
+            feats_adv   = _extract_features(model, all_adv_linf, training_params.batch_size, device)
+
+            if training_params.plot:
+                plot_tsne(feats_clean, feats_adv, all_labels, title=config_title)
 
     return results
