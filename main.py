@@ -39,6 +39,7 @@ def set_seed(seed: int) -> None:
 def build_pretrained_model(
     model_params: ModelParams,
     num_classes:  int = 10,
+    image_size:   int = 32,
 ) -> nn.Module:
     """Load a pretrained ResNet-18 and adapt it for transfer learning.
 
@@ -58,11 +59,12 @@ def build_pretrained_model(
         model.fc = nn.Linear(model.fc.in_features, num_classes)
 
     elif model_params.transfer_mode == "modifyFinetune":
-        # Replace first conv to accept 32×32 input (no aggressive downsampling)
-        model.conv1   = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
-        model.maxpool = nn.Identity()
-        model.fc      = nn.Linear(model.fc.in_features, num_classes)
-        # All layers fine-tune (requires_grad=True by default)
+        # For small inputs (e.g. 32×32 CIFAR) remove aggressive downsampling;
+        # for larger inputs (e.g. 224×224 VOC) keep the original stem.
+        if image_size <= 64:
+            model.conv1   = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
+            model.maxpool = nn.Identity()  # type: ignore[assignment]
+        model.fc = nn.Linear(model.fc.in_features, num_classes)
 
     return model
 
@@ -184,7 +186,9 @@ def main() -> None:
     print(f"Using device: {device}")
 
     if model_params.transfer_mode != "none":
-        model = build_pretrained_model(model_params, data_params.num_classes).to(device)
+        model = build_pretrained_model(
+            model_params, data_params.num_classes, data_params.voc_image_size
+        ).to(device)
     else:
         model = build_model(data_params, model_params).to(device)
     print(model)

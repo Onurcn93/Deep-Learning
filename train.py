@@ -76,9 +76,15 @@ def get_loaders(
     if data_params.dataset == "mnist":
         train_ds = datasets.MNIST(data_params.data_dir, train=True,  download=True, transform=train_tf)
         val_ds   = datasets.MNIST(data_params.data_dir, train=False, download=True, transform=val_tf)
-    else:  # cifar10
+    elif data_params.dataset == "cifar10":
         train_ds = datasets.CIFAR10(data_params.data_dir, train=True,  download=True, transform=train_tf)
         val_ds   = datasets.CIFAR10(data_params.data_dir, train=False, download=True, transform=val_tf)
+    else:  # voc
+        from datasets.voc import VOCClassification
+        train_ds = VOCClassification(data_params.voc_dir, split="train",
+                                     image_size=data_params.voc_image_size, download=True)
+        val_ds   = VOCClassification(data_params.voc_dir, split="val",
+                                     image_size=data_params.voc_image_size, download=True)
 
     train_loader = DataLoader(train_ds, batch_size=training_params.batch_size,
                               shuffle=True,  num_workers=data_params.num_workers)

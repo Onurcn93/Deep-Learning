@@ -20,6 +20,8 @@ class DataParams:
     dataset:      str
     data_dir:     str
     cifar10c_dir: str
+    voc_dir:      str
+    voc_image_size: int
     num_workers:  int
     mean:         Tuple[float, ...]
     std:          Tuple[float, ...]
@@ -118,7 +120,7 @@ def get_params() -> Tuple[DataParams, ModelParams, TrainingParams]:
 
     # General
     parser.add_argument("--mode",    choices=["train", "test", "both"], default="both")
-    parser.add_argument("--dataset", choices=["mnist", "cifar10"],      default="mnist")
+    parser.add_argument("--dataset", choices=["mnist", "cifar10", "voc"], default="mnist")
     parser.add_argument("--model",   choices=["mlp", "cnn", "vgg", "resnet", "mobilenet"], default="mlp")
     parser.add_argument("--device",  type=str,  default="auto", help="Device: auto detects cuda/mps/cpu, or specify explicitly")
     parser.add_argument("--seed",    type=int,  default=42)
@@ -214,27 +216,42 @@ def get_params() -> Tuple[DataParams, ModelParams, TrainingParams]:
                         metavar=("L1", "L2", "L3", "L4"),
                         help="Blocks per ResNet stage (default: 2 2 2 2 = ResNet-18)")
 
+    # VOC-specific
+    parser.add_argument("--voc_dir",        type=str, default="./data/VOC",
+                        help="Root directory for PASCAL VOC 2012 (VOCdevkit will be placed here)")
+    parser.add_argument("--voc_image_size", type=int, default=224,
+                        help="Resize target for VOC classification with ResNet (default: 224)")
+
     args = parser.parse_args()
 
     # Dataset-dependent settings
     if args.dataset == "mnist":
-        input_size = 784          # 1 × 28 × 28
+        input_size = 784
         mean: Tuple[float, ...] = (0.1307,)
         std:  Tuple[float, ...] = (0.3081,)
-    else:                         # cifar10
-        input_size = 3072         # 3 × 32 × 32
+        num_classes = 10
+    elif args.dataset == "cifar10":
+        input_size = 3072
         mean = (0.4914, 0.4822, 0.4465)
         std  = (0.2023, 0.1994, 0.2010)
+        num_classes = 10
+    else:  # voc
+        input_size = 3 * args.voc_image_size * args.voc_image_size
+        mean = (0.485, 0.456, 0.406)
+        std  = (0.229, 0.224, 0.225)
+        num_classes = 20
 
     data_params = DataParams(
-        dataset      = args.dataset,
-        data_dir     = "./data",
-        cifar10c_dir = args.cifar10c_dir,
-        num_workers  = 2,
-        mean         = mean,
-        std          = std,
-        input_size   = input_size,
-        num_classes  = 10,
+        dataset        = args.dataset,
+        data_dir       = "./data",
+        cifar10c_dir   = args.cifar10c_dir,
+        voc_dir        = args.voc_dir,
+        voc_image_size = args.voc_image_size,
+        num_workers    = 2,
+        mean           = mean,
+        std            = std,
+        input_size     = input_size,
+        num_classes    = num_classes,
     )
 
     model_params = ModelParams(
