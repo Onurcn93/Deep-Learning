@@ -42,7 +42,7 @@ This repository structure and implementation logic are based on the [Deep Learni
 - **AugMix** (`--augmix`): fine-tune with AugMix augmentation + Jensen-Shannon consistency loss — `CE(clean) + λ·JSD(clean, aug1, aug2)`; saves to a separate checkpoint to preserve the vanilla model
 
 ### Evaluation & Logging
-- **Plotting** (`--plot`): training curves, confusion matrix, CIFAR-10-C bar chart and heatmap, Grad-CAM overlays, t-SNE scatter — all saved to `plots/`
+- **Plotting** (`--plot`): training curves, confusion matrix, CIFAR-10-C bar chart and heatmap, Grad-CAM overlays, t-SNE scatter — saved to `results/resnet/` (classification) or `results/yolo/` (detection)
 - **Structured logger** (`--log`): formatted epoch table printed to terminal and saved to `logs/`
 - **FLOPs counter** (`--count_flops`): MACs and parameter count via ptflops
 
@@ -55,6 +55,13 @@ This repository structure and implementation logic are based on the [Deep Learni
 - **Loss**: BCE classification loss + CIoU regression loss (`torchvision.ops.complete_box_iou_loss`) with grid-cell-centre label assignment
 - **Evaluation**: mAP@0.5 via 11-point interpolation, NMS via `torchvision.ops.batched_nms`
 - **Dataset**: PASCAL VOC 2012 — 20 classes, full bounding-box annotations, auto-downloaded
+
+### Inference UI (`ui/`)
+- **VocAssist dashboard**: dark-themed web app connecting YOLOv8n and ResNet for live single-image inference
+- **Flask backend** (`ui/server.py`): loads both models at startup, runs YOLO detection + ResNet GradCAM per request, returns server-rendered base64 images
+- **Bounding box view**: PIL-drawn teal boxes on the 640×640 YOLO input image
+- **GradCAM view**: jet colormap heatmap blended onto the original image (matplotlib cm.jet)
+- **Frontend** (`ui/index.html` / `ui/style.css` / `ui/scripts.js`): vanilla JS, view toggle swaps `<img>` src, metric cards update with live confidence scores and detected classes
 
 ### Robustness & Adversarial
 - **CIFAR-10-C** (`--test_cifar10c`): evaluates across all 19 corruption types × 5 severity levels; saves bar chart and heatmap
@@ -81,6 +88,26 @@ pip install torch torchvision torchaudio --index-url https://download.pytorch.or
 ---
 
 ## Usage
+
+### Inference UI (`ui/server.py`)
+
+```bash
+pip install flask
+
+# YOLO detection only (after training yolo_best.pth):
+python ui/server.py --yolo_path yolo_best.pth
+
+# YOLO + ResNet GradCAM — CIFAR-10 ResNet checkpoint (10 classes):
+python ui/server.py --yolo_path yolo_best.pth \
+                    --resnet_path best_model.pth --resnet_classes 10
+
+# YOLO + ResNet GradCAM — VOC fine-tuned torchvision ResNet-18 (20 classes):
+python ui/server.py --yolo_path yolo_best.pth \
+                    --resnet_path best_model.pth \
+                    --resnet_arch pretrained --resnet_classes 20
+```
+
+Open **http://localhost:5000**, upload any image, and toggle between **Bounding Box** and **GradCAM** views.
 
 ### Classification (`main.py`)
 
@@ -214,7 +241,7 @@ python test_yolo.py --model_path yolo_best.pth
 | `--device` | `auto` | `auto`, `cuda`, `mps`, or `cpu` |
 | `--seed` | `42` | Global random seed |
 | `--log` / `--no-log` | `True` | Save training log to `logs/` |
-| `--plot` | `False` | Save loss curve to `plots/yolo_loss.png` |
+| `--plot` | `False` | Save loss curve to `results/yolo/yolo_loss.png` |
 
 ### Evaluation (`test_yolo.py`)
 
@@ -328,6 +355,14 @@ Deep-Learning/
 │   ├── gradcam.py      # Grad-CAM with forward/backward hooks (Selvaraju et al. 2017)
 │   ├── detection.py    # NMS, decode_predictions, compute_map (mAP@0.5)
 │   └── NN_Visualizer.py  # torchviz architecture graph for MLP
+├── ui/
+│   ├── index.html      # VocAssist dashboard — dark theme, 60/40 grid, metric cards
+│   ├── style.css       # CSS variables, glassmorphism navbar, view toggle, spinner
+│   ├── scripts.js      # Upload → POST /api/inference → swap img src + update metrics
+│   └── server.py       # Flask backend — loads YOLO + ResNet, draws boxes, GradCAM overlay
+├── results/
+│   ├── resnet/         # Classification outputs: loss curves, confusion matrix, GradCAM, t-SNE
+│   └── yolo/           # Detection outputs: training loss curve
 ├── teachers/           # Gitignored — place teacher .pth weights here
 └── requirements.txt
 ```
@@ -345,3 +380,4 @@ Deep-Learning/
 - seaborn *(optional — nicer confusion matrix and heatmaps)*
 - scikit-learn *(optional — `--tsne`)*
 - Pillow *(bundled with torchvision — used for Grad-CAM overlay resizing)*
+- flask >= 3.0 *(for `ui/server.py` inference dashboard)*
