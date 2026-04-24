@@ -11,9 +11,10 @@ Key flags:
     --weight_decay  Adam weight decay (default: 5e-4)
     --save_path     Checkpoint path (default: yolo_best.pth)
     --voc_dir       Root directory for VOCdevkit (default: ./data/VOC)
-    --device        auto | cuda | cpu
-    --no-log        Disable file logging
-    --plot          Save training loss curve to results/yolo/
+    --device           auto | cuda | cpu
+    --eval_map_every   Compute mAP@0.5 every N epochs (default: 10, 0 = off)
+    --no-log           Disable file logging
+    --plot             Save training loss curve to results/yolo/
 """
 
 from __future__ import annotations
@@ -30,6 +31,7 @@ from torchvision.ops import complete_box_iou_loss
 
 from datasets.voc import VOCDetectionDataset, detection_collate, NUM_CLASSES
 from models.YOLO import YOLOv8
+from utils.detection import decode_predictions, compute_map
 from utils.logger import TrainLogger
 
 
@@ -104,8 +106,8 @@ class YOLOv8Loss(nn.Module):
                     reg_tgt[b, :, gy, gx] = torch.stack([
                         cx - gx,
                         cy - gy,
-                        (x2 - x1) / gs,
-                        (y2 - y1) / gs,
+                        torch.log((x2 - x1) / gs + 1e-6),
+                        torch.log((y2 - y1) / gs + 1e-6),
                     ])
                     mask[b, gy, gx] = True
 
@@ -195,6 +197,28 @@ def train_one_epoch(
 
 
 @torch.no_grad()
+def eval_map(
+    model:   YOLOv8,
+    loader:  DataLoader,
+    device:  torch.device,
+    img_size: int = 640,
+    conf_thresh: float = 0.25,
+    iou_thresh:  float = 0.45,
+) -> float:
+    model.eval()
+    all_preds, all_tgts = [], []
+    for imgs, targets in loader:
+        imgs = imgs.to(device)
+        outputs = model(imgs)
+        raw     = model.decode(outputs, img_size=img_size, conf_thresh=conf_thresh)
+        preds   = decode_predictions(raw.cpu(), conf_thresh=conf_thresh, iou_thresh=iou_thresh)
+        all_preds.extend(preds)
+        all_tgts.extend([t.cpu() for t in targets])
+    results = compute_map(all_preds, all_tgts, num_classes=NUM_CLASSES, iou_thresh=0.5)
+    return results['mAP']
+
+
+@torch.no_grad()
 def validate(
     model:   YOLOv8,
     loader:  DataLoader,
@@ -241,12 +265,19 @@ def run_yolo_training(args, device: torch.device, logger: TrainLogger) -> YOLOv8
         train_losses.append(train_loss)
         val_losses.append(val_loss)
 
+        map_str = ""
+        run_map = (args.eval_map_every > 0 and
+                   (epoch % args.eval_map_every == 0 or epoch == args.epochs))
+        if run_map:
+            map_val = eval_map(model, val_loader, device, img_size=args.img_size)
+            map_str = f"  mAP@0.5={map_val:.4f}"
+
         elapsed = time.time() - t0
         logger._w(
             f"Epoch {epoch:>3}/{args.epochs}  "
             f"train={train_loss:.4f}  val={val_loss:.4f}  "
-            f"lr={scheduler.get_last_lr()[0]:.2e}  "
-            f"time={elapsed:.1f}s"
+            f"lr={scheduler.get_last_lr()[0]:.2e}"
+            f"{map_str}  time={elapsed:.1f}s"
         )
 
         if val_loss < best_val_loss:
@@ -291,6 +322,8 @@ def parse_args():
     p.add_argument("--voc_dir",      type=str,   default="./data/VOC")
     p.add_argument("--device",       type=str,   default="auto")
     p.add_argument("--seed",         type=int,   default=42)
+    p.add_argument("--eval_map_every", type=int, default=10,
+                   help="Compute mAP@0.5 on val every N epochs (0 = disabled)")
     p.add_argument("--log",  action=argparse.BooleanOptionalAction, default=True)
     p.add_argument("--plot", action="store_true")
     return p.parse_args()
