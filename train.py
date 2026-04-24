@@ -1,4 +1,4 @@
-import copy
+﻿import copy
 import os
 from typing import List, Optional, Tuple
 
@@ -24,7 +24,7 @@ def get_transforms(
     Args:
         data_params:   Dataset-related parameters (dataset name, mean, std).
         train:         If ``True``, applies training augmentations (CIFAR-10 only).
-        transfer_mode: If ``'resizeFreeze'``, upscales CIFAR-10 images to 224×224
+        transfer_mode: If ``'resizeFreeze'``, upscales CIFAR-10 images to 224Ã—224
                        to match ImageNet input size expected by pretrained backbones.
 
     Returns:
@@ -187,7 +187,7 @@ def train_one_epoch_augmix(
     cross-entropy loss is computed on the clean logits only.  The JSD term
     encourages consistent predictions across all three views.
 
-    Loss = CE(clean) + λ * JSD(p_clean, p_aug1, p_aug2)
+    Loss = CE(clean) + Î» * JSD(p_clean, p_aug1, p_aug2)
 
     Args:
         model:        The neural network to train.
@@ -260,7 +260,7 @@ def get_cifar10c_loader(
 
     Args:
         corruption:  Corruption name (e.g. ``'gaussian_noise'``).
-        severity:    Severity level 1–5.
+        severity:    Severity level 1â€“5.
         data_params: Dataset parameters (cifar10c_dir, mean, std).
         batch_size:  Mini-batch size for the returned DataLoader.
 
@@ -279,7 +279,7 @@ def get_cifar10c_loader(
     images = images[start : start + 10000]  # (10000, 32, 32, 3)
     labels = labels[start : start + 10000]  # (10000,)
 
-    # HWC uint8 → CHW float32 in [0,1], then normalise
+    # HWC uint8 â†’ CHW float32 in [0,1], then normalise
     tf = transforms.Compose([
         transforms.ToTensor(),
         transforms.Normalize(data_params.mean, data_params.std),
@@ -355,10 +355,10 @@ def train_one_epoch_kd(
 ) -> Tuple[float, float]:
     """Run one KD training epoch (Hinton et al., 2015).
 
-    Loss = alpha * T² * KL(softmax(s/T) || softmax(t/T))
+    Loss = alpha * TÂ² * KL(softmax(s/T) || softmax(t/T))
          + (1 - alpha) * CE(s, y_hard)
 
-    The T² scaling ensures gradient magnitudes stay balanced when T changes.
+    The TÂ² scaling ensures gradient magnitudes stay balanced when T changes.
 
     Args:
         student:      Student network being trained.
@@ -389,7 +389,7 @@ def train_one_epoch_kd(
 
         s_logits = student(imgs)
 
-        # Soft loss: KL(student_soft || teacher_soft), scaled by T²
+        # Soft loss: KL(student_soft || teacher_soft), scaled by TÂ²
         soft_loss = F.kl_div(
             F.log_softmax(s_logits / temperature, dim=1),
             F.softmax(t_logits / temperature, dim=1),
@@ -433,14 +433,14 @@ def train_one_epoch_teacher_prob(
     confidence on the true class becomes a per-sample smoothing weight.
 
     For each sample the soft target distribution is:
-        - true class  → p_teacher(y_true)
-        - other classes → (1 - p_teacher(y_true)) / (C - 1)  equally
+        - true class  â†’ p_teacher(y_true)
+        - other classes â†’ (1 - p_teacher(y_true)) / (C - 1)  equally
 
     Loss = CE(student_logits, soft_target)
 
-    High teacher confidence → near one-hot target (easy sample).
-    Low teacher confidence  → spread distribution (hard sample).
-    No temperature or alpha — the teacher's raw softmax IS the signal.
+    High teacher confidence â†’ near one-hot target (easy sample).
+    Low teacher confidence  â†’ spread distribution (hard sample).
+    No temperature or alpha â€” the teacher's raw softmax IS the signal.
 
     Args:
         student:      Student network being trained.
@@ -665,7 +665,7 @@ def run_training(
     logger.close()
 
     if training_params.plot:
-        plot_training_curves(train_losses, val_losses, train_accs, val_accs, title=config_title)
+        plot_training_curves(train_losses, val_losses, train_accs, val_accs, out_dir="results/resnet", title=config_title)
 
 
 def run_augmix_training(
@@ -756,4 +756,5 @@ def run_augmix_training(
     logger.close()
 
     if training_params.plot:
-        plot_training_curves(train_losses, val_losses, train_accs, val_accs, title=config_title)
+        plot_training_curves(train_losses, val_losses, train_accs, val_accs, out_dir="results/resnet", title=config_title)
+

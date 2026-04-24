@@ -8,3 +8,8 @@ __pycache__/
 plots/
 logs/
 teachers/
+yolo_best.pth
+results/**/*.png
+results/**/*.jpg
+results/**/*.json
+!results/**/.gitkeep

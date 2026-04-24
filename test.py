@@ -1,4 +1,4 @@
-from typing import Dict, List
+﻿from typing import Dict, List
 
 import numpy as np
 import torch
@@ -81,7 +81,7 @@ def run_test(
         print(f"  Class {i}: {acc:.4f}  ({class_correct[i]}/{class_total[i]})")
 
     if training_params.plot:
-        plot_confusion_matrix(all_preds, all_labels, data_params.dataset, title=config_title)
+        plot_confusion_matrix(all_preds, all_labels, data_params.dataset, out_dir="results/resnet", title=config_title)
 
     return results
 
@@ -105,7 +105,7 @@ def run_cifar10c_test(
 ) -> Dict[str, float]:
     """Evaluate a trained model on all CIFAR-10-C corruptions across all severities.
 
-    Prints a table of per-corruption accuracy averaged over severities 1–5, plus
+    Prints a table of per-corruption accuracy averaged over severities 1â€“5, plus
     the overall mean corruption accuracy (mCA). Optionally saves a bar chart and
     heatmap to ``plots/`` when ``training_params.plot`` is enabled.
 
@@ -125,7 +125,7 @@ def run_cifar10c_test(
 
     print("\n=== CIFAR-10-C Robustness Evaluation ===")
     print(f"{'Corruption':<22} {'Sev1':>6} {'Sev2':>6} {'Sev3':>6} {'Sev4':>6} {'Sev5':>6} {'Mean':>6}")
-    print("─" * 65)
+    print("â”€" * 65)
 
     results:         Dict[str, float]       = {}
     corruption_accs: Dict[str, List[float]] = {}
@@ -149,21 +149,21 @@ def run_cifar10c_test(
         print(f"{corruption:<22} {sev_str}  {mean_acc:.3f}")
 
     mca = sum(results.values()) / len(results)
-    print("─" * 65)
+    print("â”€" * 65)
     print(f"{'Mean Corruption Acc (mCA)':<22} {'':>42} {mca:.3f}")
     if clean_acc:
         print(f"{'Clean Acc':<22} {'':>42} {clean_acc:.3f}")
     results["mCA"] = mca
 
     if training_params.plot:
-        plot_cifar10c_results(corruption_accs, clean_acc, title=config_title)
+        plot_cifar10c_results(corruption_accs, clean_acc, out_dir="results/resnet", title=config_title)
 
     return results
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # PGD adversarial evaluation
-# ─────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def _extract_features(
     model:      nn.Module,
@@ -204,7 +204,7 @@ def run_pgd_test(
     device:          torch.device,
     config_title:    str = "",
 ) -> Dict[str, float]:
-    """Evaluate a model under PGD-20 adversarial attack (L∞ and L2).
+    """Evaluate a model under PGD-20 adversarial attack (Lâˆ and L2).
 
     Loads weights from ``training_params.model_path``, evaluates clean accuracy
     and adversarial accuracy on a subset of the test set, and optionally
@@ -221,11 +221,11 @@ def run_pgd_test(
     Returns:
         Dict with keys ``'clean'``, ``'pgd_linf'``, ``'pgd_l2'``.
     """
-    # ── Load weights ──────────────────────────────────────────────────────────
+    # â”€â”€ Load weights â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     model.load_state_dict(torch.load(training_params.model_path, map_location=device))
     model.eval()
 
-    # ── Build test subset loader ───────────────────────────────────────────────
+    # â”€â”€ Build test subset loader â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     tf      = get_transforms(data_params, train=False,
                              transfer_mode=model_params.transfer_mode)
     test_ds = datasets.CIFAR10(data_params.data_dir, train=False,
@@ -241,7 +241,7 @@ def run_pgd_test(
     alpha_linf = 2.5 * eps_linf / steps
     alpha_l2   = 2.5 * eps_l2   / steps
 
-    # ── Accumulators ──────────────────────────────────────────────────────────
+    # â”€â”€ Accumulators â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     n = clean_correct = linf_correct = l2_correct = 0
     gradcam_samples: List[dict] = []
 
@@ -250,11 +250,11 @@ def run_pgd_test(
     labels_batches: List[torch.Tensor] = []
 
     print(f"\n=== PGD Adversarial Evaluation  ({n_use} samples) ===")
-    print(f"  L∞  eps={eps_linf:.4f}  alpha={alpha_linf:.5f}  steps={steps}")
+    print(f"  Lâˆ  eps={eps_linf:.4f}  alpha={alpha_linf:.5f}  steps={steps}")
     print(f"  L2  eps={eps_l2}        alpha={alpha_l2:.5f}  steps={steps}")
     print()
 
-    # ── Main eval loop ─────────────────────────────────────────────────────────
+    # â”€â”€ Main eval loop â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     for imgs, labels in loader:
         imgs, labels = imgs.to(device), labels.to(device)
 
@@ -284,7 +284,7 @@ def run_pgd_test(
         adv_linf_batches.append(adv_linf.cpu())
         labels_batches.append(labels.cpu())
 
-        # Collect GradCAM candidates: clean correct, L∞ fooled
+        # Collect GradCAM candidates: clean correct, Lâˆ fooled
         if training_params.gradcam and len(gradcam_samples) < 4:
             for i in range(labels.size(0)):
                 if len(gradcam_samples) >= 4:
@@ -298,21 +298,21 @@ def run_pgd_test(
                         "adv_pred":   linf_preds[i].item(),
                     })
 
-    # ── Results table ─────────────────────────────────────────────────────────
+    # â”€â”€ Results table â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     acc_clean = clean_correct / n
     acc_linf  = linf_correct  / n
     acc_l2    = l2_correct    / n
 
     print(f"{'Eval':<22} {'Acc':>7}  {'Drop':>7}")
-    print("─" * 40)
+    print("â”€" * 40)
     print(f"{'Clean':<22} {acc_clean:>7.4f}")
-    print(f"{'PGD-L∞':<22} {acc_linf:>7.4f}  {acc_clean-acc_linf:>+7.4f}")
+    print(f"{'PGD-Lâˆ':<22} {acc_linf:>7.4f}  {acc_clean-acc_linf:>+7.4f}")
     print(f"{'PGD-L2':<22} {acc_l2:>7.4f}  {acc_clean-acc_l2:>+7.4f}")
-    print("─" * 40)
+    print("â”€" * 40)
 
     results = {"clean": acc_clean, "pgd_linf": acc_linf, "pgd_l2": acc_l2}
 
-    # ── Grad-CAM ──────────────────────────────────────────────────────────────
+    # â”€â”€ Grad-CAM â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if training_params.gradcam and gradcam_samples:
         mean_t = torch.tensor(data_params.mean).view(3, 1, 1)
         std_t  = torch.tensor(data_params.std).view(3, 1, 1)
@@ -320,7 +320,7 @@ def run_pgd_test(
         try:
             target_layer = get_target_layer(model)
         except ValueError as e:
-            print(f"[gradcam] Skipped — {e}")
+            print(f"[gradcam] Skipped â€” {e}")
         else:
             gradcam = GradCAM(model, target_layer)
             clean_imgs_px, adv_imgs_px = [], []
@@ -352,31 +352,32 @@ def run_pgd_test(
                     clean_cams,    adv_cams,
                     labels_gc, clean_preds_gc, adv_preds_gc,
                     class_names=CIFAR10_CLASSES,
+                    out_dir="results/resnet",
                     title=config_title,
                 )
 
-    # ── t-SNE ─────────────────────────────────────────────────────────────────
+    # â”€â”€ t-SNE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     if training_params.tsne:
         if not hasattr(model, "avgpool"):
-            print("[tsne] Skipped — model has no avgpool layer for feature extraction.")
+            print("[tsne] Skipped â€” model has no avgpool layer for feature extraction.")
         else:
             all_clean    = torch.cat(clean_batches)
             all_adv_linf = torch.cat(adv_linf_batches)
             all_labels   = torch.cat(labels_batches).numpy()
 
-            print("[tsne] Extracting features …")
+            print("[tsne] Extracting features â€¦")
             feats_clean = _extract_features(model, all_clean,    training_params.batch_size, device)
             feats_adv   = _extract_features(model, all_adv_linf, training_params.batch_size, device)
 
             if training_params.plot:
-                plot_tsne(feats_clean, feats_adv, all_labels, title=config_title)
+                plot_tsne(feats_clean, feats_adv, all_labels, out_dir="results/resnet", title=config_title)
 
     return results
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # Adversarial transferability evaluation
-# ─────────────────────────────────────────────────────────────────────────────
+# â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def run_transfer_test(
     student:         nn.Module,
@@ -389,7 +390,7 @@ def run_transfer_test(
 ) -> Dict[str, float]:
     """Evaluate adversarial transferability of PGD examples from teacher to student.
 
-    Generates PGD-20 L∞ adversarial examples using the teacher model, then
+    Generates PGD-20 Lâˆ adversarial examples using the teacher model, then
     evaluates those same examples on both the teacher and the student.
 
     Args:
@@ -405,12 +406,12 @@ def run_transfer_test(
         Dict with keys ``'teacher_clean'``, ``'teacher_adv'``,
         ``'student_clean'``, ``'student_adv'``.
     """
-    # ── Load student weights ──────────────────────────────────────────────────
+    # â”€â”€ Load student weights â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     student.load_state_dict(torch.load(training_params.student_path, map_location=device))
     student.eval()
     teacher.eval()
 
-    # ── Test subset loader ────────────────────────────────────────────────────
+    # â”€â”€ Test subset loader â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     tf     = get_transforms(data_params, train=False,
                             transfer_mode=model_params.transfer_mode)
     test_ds = datasets.CIFAR10(data_params.data_dir, train=False,
@@ -476,3 +477,5 @@ def run_transfer_test(
         "student_clean": acc_sc,
         "student_adv":   acc_sa,
     }
+
+

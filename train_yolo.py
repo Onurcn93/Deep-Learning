@@ -13,7 +13,7 @@ Key flags:
     --voc_dir       Root directory for VOCdevkit (default: ./data/VOC)
     --device        auto | cuda | cpu
     --no-log        Disable file logging
-    --plot          Save training loss curve to plots/
+    --plot          Save training loss curve to results/yolo/
 """
 
 from __future__ import annotations
@@ -255,7 +255,7 @@ def run_yolo_training(args, device: torch.device, logger: TrainLogger) -> YOLOv8
             logger._w(f"  → saved checkpoint (val_loss={val_loss:.4f})")
 
     if args.plot:
-        os.makedirs("plots", exist_ok=True)
+        os.makedirs("results/yolo", exist_ok=True)
         try:
             import matplotlib.pyplot as plt
             fig, ax = plt.subplots()
@@ -265,9 +265,9 @@ def run_yolo_training(args, device: torch.device, logger: TrainLogger) -> YOLOv8
             ax.set_ylabel("Loss")
             ax.set_title("YOLOv8n | VOC 2012")
             ax.legend()
-            fig.savefig("plots/yolo_loss.png", bbox_inches="tight")
+            fig.savefig("results/yolo/yolo_loss.png", bbox_inches="tight")
             plt.close(fig)
-            logger._w("Loss curve saved to plots/yolo_loss.png")
+            logger._w("Loss curve saved to results/yolo/yolo_loss.png")
         except Exception as e:
             logger._w(f"Plot failed: {e}")
 

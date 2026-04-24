@@ -1,6 +1,6 @@
-"""Plotting utilities for training curves, confusion matrix, CIFAR-10-C, and adversarial.
+﻿"""Plotting utilities for training curves, confusion matrix, CIFAR-10-C, and adversarial.
 
-All figures are saved to the ``plots/`` directory (git-ignored).
+All figures are saved under ``results/<model>/`` (git-ignored, dirs tracked via .gitkeep).
 """
 
 import os
@@ -15,7 +15,7 @@ CIFAR10_CLASSES = [
 ]
 MNIST_CLASSES = [str(i) for i in range(10)]
 
-PLOTS_DIR = "plots"
+PLOTS_DIR = "results"
 
 
 def _ensure_dir(path: str) -> None:
@@ -25,7 +25,7 @@ def _ensure_dir(path: str) -> None:
 def _title_to_filename(title: str) -> str:
     """Convert a config title string to a safe filename suffix."""
     import re
-    s = title.replace("×", "x").replace(" | ", "_").replace("=", "").replace(" ", "_")
+    s = title.replace("Ã—", "x").replace(" | ", "_").replace("=", "").replace(" ", "_")
     s = re.sub(r"[^\w\-]", "", s)
     return s
 
@@ -76,7 +76,7 @@ def plot_training_curves(
     path = os.path.join(out_dir, f"training_curves{suffix}.png")
     fig.savefig(path, dpi=150)
     plt.close(fig)
-    print(f"[plot] Saved training curves → {path}")
+    print(f"[plot] Saved training curves â†’ {path}")
 
 
 def plot_confusion_matrix(
@@ -134,7 +134,7 @@ def plot_confusion_matrix(
     path = os.path.join(out_dir, f"confusion_matrix{suffix}.png")
     fig.savefig(path, dpi=150)
     plt.close(fig)
-    print(f"[plot] Saved confusion matrix → {path}")
+    print(f"[plot] Saved confusion matrix â†’ {path}")
 
 
 def plot_cifar10c_results(
@@ -147,7 +147,7 @@ def plot_cifar10c_results(
 
     Args:
         corruption_accs: Mapping from corruption name to a list of 5 accuracy
-                         values (one per severity level, low→high).
+                         values (one per severity level, lowâ†’high).
         clean_acc:       Clean test accuracy used as the reference baseline.
         out_dir:         Directory to save the figures.
         title:           Config string used in figure titles and filenames.
@@ -159,7 +159,7 @@ def plot_cifar10c_results(
     mean_accs   = [sum(v) / len(v) for v in corruption_accs.values()]
     n           = len(corruptions)
 
-    # ── Plot 1: horizontal bar chart (mean acc per corruption) ──────────────
+    # â”€â”€ Plot 1: horizontal bar chart (mean acc per corruption) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     fig, ax = plt.subplots(figsize=(9, max(5, n * 0.45)))
 
     colors = ["#d9534f" if a < clean_acc else "#5cb85c" for a in mean_accs]
@@ -170,7 +170,7 @@ def plot_cifar10c_results(
     ax.set_yticklabels(corruptions, fontsize=9)
     ax.set_xlabel("Accuracy")
     ax.set_xlim(0, 1.0)
-    ax.set_title("Mean Accuracy per Corruption Type (avg over severities 1–5)")
+    ax.set_title("Mean Accuracy per Corruption Type (avg over severities 1â€“5)")
     ax.legend(fontsize=9)
     ax.grid(axis="x", alpha=0.3)
 
@@ -185,9 +185,9 @@ def plot_cifar10c_results(
     path = os.path.join(out_dir, f"cifar10c_bar{suffix}.png")
     fig.savefig(path, dpi=150)
     plt.close(fig)
-    print(f"[plot] Saved CIFAR-10-C bar chart → {path}")
+    print(f"[plot] Saved CIFAR-10-C bar chart â†’ {path}")
 
-    # ── Plot 2: heatmap (corruptions × severity) ────────────────────────────
+    # â”€â”€ Plot 2: heatmap (corruptions Ã— severity) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     matrix = np.array([corruption_accs[c] for c in corruptions])  # (n, 5)
 
     fig, ax = plt.subplots(figsize=(7, max(5, n * 0.45)))
@@ -213,14 +213,14 @@ def plot_cifar10c_results(
                 ax.text(j, i, f"{matrix[i, j]:.3f}", ha="center", va="center", fontsize=7)
 
     ax.set_xlabel("Severity")
-    ax.set_title("Accuracy per Corruption × Severity")
+    ax.set_title("Accuracy per Corruption Ã— Severity")
     if title:
         fig.suptitle(title, fontsize=9, fontweight="bold")
     fig.tight_layout(rect=[0, 0, 1, 0.96] if title else [0, 0, 1, 1])
     path = os.path.join(out_dir, f"cifar10c_heatmap{suffix}.png")
     fig.savefig(path, dpi=150)
     plt.close(fig)
-    print(f"[plot] Saved CIFAR-10-C heatmap → {path}")
+    print(f"[plot] Saved CIFAR-10-C heatmap â†’ {path}")
 
 
 def plot_gradcam(
@@ -306,7 +306,7 @@ def plot_gradcam(
     path   = os.path.join(out_dir, f"gradcam{suffix}.png")
     fig.savefig(path, dpi=150)
     plt.close(fig)
-    print(f"[plot] Saved Grad-CAM figure → {path}")
+    print(f"[plot] Saved Grad-CAM figure â†’ {path}")
 
 
 def plot_tsne(
@@ -331,7 +331,7 @@ def plot_tsne(
     try:
         from sklearn.manifold import TSNE
     except ImportError:
-        print("[plot] sklearn not installed — skipping t-SNE. Run: pip install scikit-learn")
+        print("[plot] sklearn not installed â€” skipping t-SNE. Run: pip install scikit-learn")
         return
 
     _ensure_dir(out_dir)
@@ -365,7 +365,7 @@ def plot_tsne(
     ax.legend(handles[::2], label_names, fontsize=7, ncol=2,
               loc="upper right", markerscale=1.5)
 
-    ax.set_title("t-SNE: clean (○) vs adversarial (×) features")
+    ax.set_title("t-SNE: clean (â—‹) vs adversarial (Ã—) features")
     ax.set_xlabel("t-SNE dim 1")
     ax.set_ylabel("t-SNE dim 2")
     ax.grid(True, alpha=0.2)
@@ -378,4 +378,5 @@ def plot_tsne(
     path   = os.path.join(out_dir, f"tsne{suffix}.png")
     fig.savefig(path, dpi=150)
     plt.close(fig)
-    print(f"[plot] Saved t-SNE figure → {path}")
+    print(f"[plot] Saved t-SNE figure â†’ {path}")
+
