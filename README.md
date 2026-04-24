@@ -26,7 +26,7 @@ This repository structure and implementation logic are based on the [Deep Learni
 
 | Model | Script | Dataset | Notes |
 |-------|--------|---------|-------|
-| YOLOv8n | `train_yolo.py` | PASCAL VOC 2012 | CSPDarknet + PANet + anchor-free heads; 2.23M params |
+| YOLOv8n | `train_yolo.py` | PASCAL VOC 2012 | ResNet50 (ImageNet) backbone + PANet + anchor-free heads; 25.55M params |
 
 ---
 
@@ -51,7 +51,7 @@ This repository structure and implementation logic are based on the [Deep Learni
 - **Knowledge distillation**: Hinton KD (`--distill_mode hinton`) and teacher-probability label smoothing (`--distill_mode teacher_prob`); supports both custom-trained and pretrained-style teachers via `--teacher_transfer_mode`
 
 ### Object Detection (YOLOv8n)
-- **Architecture**: CSPDarknet backbone → PANet neck (top-down + bottom-up FPN) → anchor-free decoupled heads at P3/P4/P5 (strides 8/16/32)
+- **Architecture**: ResNet50 (ImageNet pretrained) backbone → channel adapter convs → PANet neck (top-down + bottom-up FPN) → anchor-free decoupled heads at P3/P4/P5 (strides 8/16/32); 25.55M params (backbone 23.51M + neck/head 2.04M)
 - **Loss**: BCE classification loss + CIoU regression loss (`torchvision.ops.complete_box_iou_loss`) with grid-cell-centre label assignment
 - **Evaluation**: mAP@0.5 via 11-point interpolation, NMS via `torchvision.ops.batched_nms`
 - **Dataset**: PASCAL VOC 2012 — 20 classes, full bounding-box annotations, auto-downloaded
@@ -240,6 +240,10 @@ python test_yolo.py --model_path yolo_best.pth
 | `--voc_dir` | `./data/VOC` | Root directory for VOCdevkit |
 | `--device` | `auto` | `auto`, `cuda`, `mps`, or `cpu` |
 | `--seed` | `42` | Global random seed |
+| `--pretrained_backbone` / `--no-pretrained_backbone` | `True` | Use ImageNet-pretrained ResNet50 backbone |
+| `--freeze_backbone` / `--no-freeze_backbone` | `False` | Freeze backbone — train only neck and heads |
+| `--backbone_lr_mult` | `0.1` | Backbone LR multiplier when not frozen (backbone LR = lr × this) |
+| `--eval_map_every` | `1` | Compute mAP@0.5 on val every N epochs (0 = disabled) |
 | `--log` / `--no-log` | `True` | Save training log to `logs/` |
 | `--plot` | `False` | Save loss curve to `results/yolo/yolo_loss.png` |
 
@@ -261,12 +265,12 @@ python test_yolo.py --model_path yolo_best.pth
 ## Examples
 
 ```bash
-# YOLOv8n — train on PASCAL VOC 2012
-python train_yolo.py --epochs 50 --lr 1e-3 --batch_size 16 \
-                     --weight_decay 5e-4 --device auto --plot
+# YOLOv8n — train on PASCAL VOC 2012 (ResNet50 backbone, 6 GB GPU)
+python train_yolo.py --epochs 50 --lr 1e-3 --batch_size 4 --img_size 416 \
+                     --weight_decay 5e-4 --eval_map_every 5 --device auto --plot
 
-# YOLOv8n — evaluate mAP@0.5
-python test_yolo.py --model_path yolo_best.pth --conf_thresh 0.25
+# YOLOv8n — evaluate mAP@0.5 (img_size must match training)
+python test_yolo.py --model_path yolo_best.pth --img_size 416 --conf_thresh 0.25
 
 # ResNet-18 fine-tune on PASCAL VOC 2012 (20-class classification)
 python main.py --dataset voc --transfer_mode modifyFinetune \
@@ -348,7 +352,7 @@ Deep-Learning/
 │   ├── VGG.py          # VGG-11/13/16/19 with BatchNorm
 │   ├── ResNet.py       # ResNet with configurable BasicBlocks
 │   ├── MobileNet.py    # MobileNetV2 with stride-1 stem for 32×32
-│   └── YOLO.py         # YOLOv8n — CSPDarknet + PANet + anchor-free heads
+│   └── YOLO.py         # YOLOv8n — ResNet50 backbone + PANet + anchor-free heads
 ├── utils/
 │   ├── plot.py         # All figures: curves, confusion matrix, CIFAR-10-C, Grad-CAM, t-SNE
 │   ├── logger.py       # Structured epoch table — terminal + logs/

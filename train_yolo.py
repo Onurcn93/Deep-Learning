@@ -4,17 +4,20 @@ Usage:
     python train_yolo.py --epochs 50 --lr 1e-3 --batch_size 16 --device auto
 
 Key flags:
-    --epochs        Training epochs (default: 50)
-    --lr            Initial learning rate (default: 1e-3)
-    --batch_size    Batch size (default: 16)
-    --img_size      Input image size — must match VOCDetectionDataset (default: 640)
-    --weight_decay  Adam weight decay (default: 5e-4)
-    --save_path     Checkpoint path (default: yolo_best.pth)
-    --voc_dir       Root directory for VOCdevkit (default: ./data/VOC)
-    --device           auto | cuda | cpu
-    --eval_map_every   Compute mAP@0.5 every N epochs (default: 10, 0 = off)
-    --no-log           Disable file logging
-    --plot             Save training loss curve to results/yolo/
+    --epochs              Training epochs (default: 50)
+    --lr                  Initial learning rate for neck/heads (default: 1e-3)
+    --batch_size          Batch size (default: 16)
+    --img_size            Input image size (default: 640)
+    --weight_decay        AdamW weight decay (default: 5e-4)
+    --save_path           Checkpoint path (default: yolo_best.pth)
+    --voc_dir             Root directory for VOCdevkit (default: ./data/VOC)
+    --device              auto | cuda | cpu
+    --pretrained_backbone Use ImageNet-pretrained ResNet50 backbone (default: True)
+    --freeze_backbone     Freeze backbone weights entirely (default: False)
+    --backbone_lr_mult    Backbone LR = lr × this factor (default: 0.1)
+    --eval_map_every      Compute mAP@0.5 on val every N epochs (default: 1, 0 = off)
+    --no-log              Disable file logging
+    --plot                Save training loss curve to results/yolo/
 """
 
 from __future__ import annotations
@@ -25,11 +28,12 @@ import time
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch import Tensor
 from torch.utils.data import DataLoader
-from torchvision.ops import complete_box_iou_loss
+from torchvision.ops import complete_box_iou_loss, box_iou
 
-from datasets.voc import VOCDetectionDataset, detection_collate, NUM_CLASSES
+from datasets.voc import VOCDetectionDataset, detection_collate, NUM_CLASSES, VOC_CLASSES
 from models.YOLO import YOLOv8
 from utils.detection import decode_predictions, compute_map
 from utils.logger import TrainLogger
@@ -40,38 +44,196 @@ from utils.logger import TrainLogger
 # ---------------------------------------------------------------------------
 
 class YOLOv8Loss(nn.Module):
-    """Combined classification + regression loss for YOLOv8 heads.
+    """Classification + regression loss with Task-Aligned Label Assignment (TAL).
 
     For each scale:
-      - Classification : BCE with logits on assigned cells.
-      - Regression     : CIoU loss on assigned cells.
-
-    Label assignment uses a simplified IoU-based strategy:
-      For each ground-truth box, find the grid cell whose centre falls
-      inside the box and assign that cell as positive.
+      - TAL assigns the top-k highest-alignment cells per GT as positives.
+        Alignment score = cls_score^alpha × IoU^beta, restricted to cells
+        whose centre falls inside the GT box.
+      - Classification : focal BCE on all cells; positives get soft IoU-weighted
+        class targets, negatives get 0.
+      - Regression     : CIoU on positive cells only.
 
     Args:
-        num_classes : Number of detection classes.
-        img_size    : Input image size (square).
-        cls_weight  : Weight on classification loss term.
-        box_weight  : Weight on box regression loss term.
+        num_classes  : Number of detection classes.
+        img_size     : Input image size (square).
+        cls_weight   : Weight on classification loss.
+        box_weight   : Weight on box regression loss.
+        topk         : Max positive cells assigned per GT per scale (default 10).
+        alpha        : cls-score exponent in TAL alignment metric.
+        beta         : IoU exponent in TAL alignment metric.
+        focal_gamma  : Focal loss γ — down-weights easy negatives.
     """
 
-    STRIDES = [8, 16, 32]  # P3, P4, P5
+    STRIDES = [8, 16, 32]
 
     def __init__(
         self,
-        num_classes: int = 20,
-        img_size:    int = 640,
-        cls_weight:  float = 0.5,
-        box_weight:  float = 7.5,
+        num_classes:  int   = 20,
+        img_size:     int   = 640,
+        cls_weight:   float = 0.5,
+        box_weight:   float = 7.5,
+        topk:         int   = 10,
+        alpha:        float = 0.5,
+        beta:         float = 6.0,
+        focal_gamma:  float = 1.5,
     ) -> None:
         super().__init__()
         self.num_classes = num_classes
         self.img_size    = img_size
         self.cls_weight  = cls_weight
         self.box_weight  = box_weight
-        self.bce         = nn.BCEWithLogitsLoss(reduction="mean")
+        self.topk        = topk
+        self.alpha       = alpha
+        self.beta        = beta
+        self.focal_gamma = focal_gamma
+
+    # ── helpers ─────────────────────────────────────────────────────────────
+
+    def _decode_preds(self, reg_preds: Tensor, stride: int) -> Tensor:
+        """(B,4,H,W) reg predictions → (B,H*W,4) absolute xyxy boxes."""
+        B, _, H, W = reg_preds.shape
+        device = reg_preds.device
+        gy, gx = torch.meshgrid(
+            torch.arange(H, device=device, dtype=torch.float32),
+            torch.arange(W, device=device, dtype=torch.float32),
+            indexing='ij',
+        )
+        gx = gx.reshape(1, 1, H, W)
+        gy = gy.reshape(1, 1, H, W)
+        cx = (reg_preds[:, 0:1] + gx) * stride
+        cy = (reg_preds[:, 1:2] + gy) * stride
+        w  = reg_preds[:, 2:3].clamp(-8, 8).exp() * stride
+        h  = reg_preds[:, 3:4].clamp(-8, 8).exp() * stride
+        boxes = torch.cat([cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2], dim=1)
+        return boxes.permute(0, 2, 3, 1).reshape(B, H * W, 4)
+
+    @staticmethod
+    def _to_xyxy(t: Tensor) -> Tensor:
+        """Grid-relative [cx_off, cy_off, log_w, log_h] → virtual xyxy for CIoU."""
+        cx, cy = t[:, 0], t[:, 1]
+        w, h   = t[:, 2].clamp(-8, 8).exp(), t[:, 3].clamp(-8, 8).exp()
+        return torch.stack([cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2], dim=1)
+
+    def _focal_bce(self, logits: Tensor, targets: Tensor) -> Tensor:
+        """Focal-weighted BCE averaged over all elements."""
+        bce   = F.binary_cross_entropy_with_logits(logits, targets, reduction='none')
+        p_t   = targets * logits.detach().sigmoid() + (1 - targets) * (1 - logits.detach().sigmoid())
+        return (bce * (1 - p_t).pow(self.focal_gamma)).mean()
+
+    # ── Task-Aligned Label Assignment ────────────────────────────────────────
+
+    def _tal_assign(
+        self,
+        cls_logits: Tensor,
+        reg_preds:  Tensor,
+        targets:    list[Tensor],
+        stride:     int,
+    ) -> tuple[Tensor, Tensor, Tensor]:
+        """Assign GT boxes to grid cells.
+
+        Returns:
+            cls_tgt  (B, N, C)  IoU-weighted class targets; 0 = background.
+            reg_tgt  (B, N, 4)  [cx_off, cy_off, log_w, log_h] for positive cells.
+            mask_pos (B, N)     True for positive cells.
+        """
+        B, C, H, W = cls_logits.shape
+        N      = H * W
+        device = cls_logits.device
+
+        # Grid cell origins and centres in pixel space
+        gy_idx, gx_idx = torch.meshgrid(
+            torch.arange(H, device=device, dtype=torch.float32),
+            torch.arange(W, device=device, dtype=torch.float32),
+            indexing='ij',
+        )
+        gx_f = gx_idx.reshape(-1)           # (N,) integer col index
+        gy_f = gy_idx.reshape(-1)           # (N,) integer row index
+        cx_c = (gx_f + 0.5) * stride        # cell-centre x (pixels)
+        cy_c = (gy_f + 0.5) * stride        # cell-centre y (pixels)
+
+        pred_boxes = self._decode_preds(reg_preds, stride)              # (B, N, 4)
+        cls_scores = (cls_logits.detach().sigmoid()
+                      .permute(0, 2, 3, 1).reshape(B, N, C))            # (B, N, C)
+
+        cls_tgt  = torch.zeros(B, N, C, device=device)
+        reg_tgt  = torch.zeros(B, N, 4, device=device)
+        mask_pos = torch.zeros(B, N, dtype=torch.bool, device=device)
+
+        for b in range(B):
+            tgt = targets[b]                # (M, 5) [x1,y1,x2,y2,cls]
+            if tgt.shape[0] == 0:
+                continue
+
+            gt_boxes = tgt[:, :4]           # (M, 4) absolute xyxy
+            gt_cls   = tgt[:, 4].long()     # (M,)
+            M        = gt_boxes.shape[0]
+
+            # ── candidate cells: centre must fall inside GT box ──────────
+            inside = (
+                (cx_c.unsqueeze(0) >= gt_boxes[:, 0:1]) &   # (M, N)
+                (cx_c.unsqueeze(0) <= gt_boxes[:, 2:3]) &
+                (cy_c.unsqueeze(0) >= gt_boxes[:, 1:2]) &
+                (cy_c.unsqueeze(0) <= gt_boxes[:, 3:4])
+            )
+
+            # ── IoU between current predicted boxes and all GTs ──────────
+            iou_mn = box_iou(gt_boxes, pred_boxes[b].detach())          # (M, N)
+
+            # ── per-GT class score at each cell ──────────────────────────
+            # cls_scores[b]: (N, C) → index GT classes → (N, M) → T → (M, N)
+            gt_cls_sc = cls_scores[b][:, gt_cls].T                      # (M, N)
+
+            # ── alignment score (zero outside GT box) ────────────────────
+            align = (gt_cls_sc.clamp(0).pow(self.alpha) *
+                     iou_mn.clamp(0).pow(self.beta) *
+                     inside.float())                                     # (M, N)
+
+            # ── top-k cells per GT ────────────────────────────────────────
+            k = min(self.topk, N)
+            _, topk_idx = align.topk(k, dim=1)                          # (M, k)
+            cand = torch.zeros(M, N, dtype=torch.bool, device=device)
+            cand.scatter_(1, topk_idx, True)
+            cand &= inside                                               # (M, N)
+
+            if not cand.any():
+                continue
+
+            # ── conflict resolution: each cell keeps the GT with best IoU ─
+            best_gt = (iou_mn * cand.float()).argmax(dim=0)             # (N,)
+            winner  = torch.zeros(M, N, dtype=torch.bool, device=device)
+            winner.scatter_(0, best_gt.unsqueeze(0), True)
+            cand   &= winner
+
+            cell_pos = cand.any(dim=0)                                   # (N,)
+            if not cell_pos.any():
+                continue
+
+            pos_idx  = cell_pos.nonzero(as_tuple=True)[0]               # (K,)
+            asgn_gt  = best_gt[pos_idx]                                  # (K,)
+            asgn_cls = gt_cls[asgn_gt]                                   # (K,)
+            asgn_iou = iou_mn[asgn_gt, pos_idx].clamp(0, 1)            # (K,)
+
+            # ── soft class targets (IoU-weighted) ────────────────────────
+            cls_tgt[b][pos_idx, asgn_cls] = asgn_iou
+            mask_pos[b][pos_idx] = True
+
+            # ── regression targets ────────────────────────────────────────
+            ab  = gt_boxes[asgn_gt]
+            gcx = (ab[:, 0] + ab[:, 2]) / 2
+            gcy = (ab[:, 1] + ab[:, 3]) / 2
+            gw  = ab[:, 2] - ab[:, 0]
+            gh  = ab[:, 3] - ab[:, 1]
+            reg_tgt[b][pos_idx] = torch.stack([
+                gcx / stride - gx_f[pos_idx],
+                gcy / stride - gy_f[pos_idx],
+                torch.log(gw / stride + 1e-6),
+                torch.log(gh / stride + 1e-6),
+            ], dim=1)
+
+        return cls_tgt, reg_tgt, mask_pos
+
+    # ── forward ──────────────────────────────────────────────────────────────
 
     def forward(self, outputs, targets: list[Tensor]) -> Tensor:
         """
@@ -79,62 +241,31 @@ class YOLOv8Loss(nn.Module):
             outputs : list of 3 tuples (cls_logits, reg_preds), one per scale.
             targets : list of B tensors, each (M_i, 5) [x1,y1,x2,y2,cls].
         """
-        total_cls = torch.tensor(0.0, device=outputs[0][0].device)
-        total_box = torch.tensor(0.0, device=outputs[0][0].device)
-        n_pos     = 0
+        device    = outputs[0][0].device
+        total_cls = torch.tensor(0.0, device=device)
+        total_box = torch.tensor(0.0, device=device)
 
         for (cls_logits, reg_preds), stride in zip(outputs, self.STRIDES):
             B, C, H, W = cls_logits.shape
-            gs = stride  # grid size in pixels
+            N = H * W
 
-            cls_tgt = torch.zeros_like(cls_logits)   # (B, C, H, W)
-            reg_tgt = torch.zeros_like(reg_preds)     # (B, 4, H, W)
-            mask    = torch.zeros(B, H, W, dtype=torch.bool,
-                                  device=cls_logits.device)
+            cls_tgt, reg_tgt, mask_pos = self._tal_assign(
+                cls_logits, reg_preds, targets, stride)
 
-            for b, tgt in enumerate(targets):
-                if tgt.shape[0] == 0:
-                    continue
-                for box in tgt:
-                    x1, y1, x2, y2, cls = box
-                    cx = ((x1 + x2) / 2) / gs
-                    cy = ((y1 + y2) / 2) / gs
-                    gx = int(cx.clamp(0, W - 1))
-                    gy = int(cy.clamp(0, H - 1))
+            # focal BCE on all cells (positives: soft IoU targets; negatives: 0)
+            cls_flat   = cls_logits.permute(0, 2, 3, 1).reshape(B, N, C)
+            total_cls += self._focal_bce(cls_flat, cls_tgt)
 
-                    cls_tgt[b, int(cls), gy, gx] = 1.0
-                    reg_tgt[b, :, gy, gx] = torch.stack([
-                        cx - gx,
-                        cy - gy,
-                        torch.log((x2 - x1) / gs + 1e-6),
-                        torch.log((y2 - y1) / gs + 1e-6),
-                    ])
-                    mask[b, gy, gx] = True
-
-            # Classification loss on all cells
-            total_cls += self.bce(cls_logits, cls_tgt)
-
-            # Box regression loss only on positive cells
-            if mask.any():
-                reg_pred_pos = reg_preds.permute(0, 2, 3, 1)[mask]  # (K, 4)
-                reg_tgt_pos  = reg_tgt.permute(0, 2, 3, 1)[mask]    # (K, 4)
-
-                # Convert to xyxy for CIoU
-                def to_xyxy(t: Tensor) -> Tensor:
-                    cx_, cy_ = t[:, 0], t[:, 1]
-                    w_,  h_  = t[:, 2].exp(), t[:, 3].exp()
-                    return torch.stack([cx_ - w_/2, cy_ - h_/2,
-                                        cx_ + w_/2, cy_ + h_/2], dim=1)
-
+            # CIoU on positive cells only
+            if mask_pos.any():
+                reg_flat   = reg_preds.permute(0, 2, 3, 1).reshape(B, N, 4)
                 total_box += complete_box_iou_loss(
-                    to_xyxy(reg_pred_pos),
-                    to_xyxy(reg_tgt_pos),
-                    reduction="mean",
+                    self._to_xyxy(reg_flat[mask_pos]),
+                    self._to_xyxy(reg_tgt[mask_pos]),
+                    reduction='mean',
                 )
-                n_pos += mask.sum().item()
 
-        loss = self.cls_weight * total_cls + self.box_weight * total_box
-        return loss
+        return self.cls_weight * total_cls + self.box_weight * total_box
 
 
 # ---------------------------------------------------------------------------
@@ -204,7 +335,7 @@ def eval_map(
     img_size: int = 640,
     conf_thresh: float = 0.25,
     iou_thresh:  float = 0.45,
-) -> float:
+) -> dict:
     model.eval()
     all_preds, all_tgts = [], []
     for imgs, targets in loader:
@@ -214,8 +345,17 @@ def eval_map(
         preds   = decode_predictions(raw.cpu(), conf_thresh=conf_thresh, iou_thresh=iou_thresh)
         all_preds.extend(preds)
         all_tgts.extend([t.cpu() for t in targets])
-    results = compute_map(all_preds, all_tgts, num_classes=NUM_CLASSES, iou_thresh=0.5)
-    return results['mAP']
+    return compute_map(all_preds, all_tgts, num_classes=NUM_CLASSES, iou_thresh=0.5)
+
+
+def _log_map_table(results: dict, logger: TrainLogger) -> None:
+    logger._w(f"\n  {'Class':<20} {'AP':>8}")
+    logger._w(f"  {'-'*30}")
+    for c, name in enumerate(VOC_CLASSES):
+        ap = results.get(f"AP_{c}", 0.0)
+        logger._w(f"  {name:<20} {ap * 100:>7.2f}%")
+    logger._w(f"  {'─'*30}")
+    logger._w(f"  {'mAP@0.5':<20} {results['mAP'] * 100:>7.2f}%")
 
 
 @torch.no_grad()
@@ -241,19 +381,47 @@ def validate(
 
 def run_yolo_training(args, device: torch.device, logger: TrainLogger) -> YOLOv8:
     train_loader, val_loader = get_loaders(args)
-    model   = YOLOv8(num_classes=NUM_CLASSES).to(device)
+    model   = YOLOv8(
+        num_classes=NUM_CLASSES,
+        pretrained_backbone=args.pretrained_backbone,
+    ).to(device)
     loss_fn = YOLOv8Loss(num_classes=NUM_CLASSES, img_size=args.img_size)
-    opt     = torch.optim.AdamW(model.parameters(),
-                                lr=args.lr, weight_decay=args.weight_decay)
+
+    if args.freeze_backbone:
+        for p in model.backbone_parameters():
+            p.requires_grad_(False)
+        opt = torch.optim.AdamW(
+            model.head_parameters(), lr=args.lr, weight_decay=args.weight_decay
+        )
+    else:
+        opt = torch.optim.AdamW([
+            {"params": model.backbone_parameters(),
+             "lr": args.lr * args.backbone_lr_mult},
+            {"params": model.head_parameters(),
+             "lr": args.lr},
+        ], weight_decay=args.weight_decay)
+
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=args.epochs)
 
     best_val_loss = float("inf")
     train_losses, val_losses = [], []
 
-    logger._w(f"\nYOLOv8n | VOC 2012 | img={args.img_size} | "
-              f"bs={args.batch_size} | lr={args.lr} | epochs={args.epochs}")
-    logger._w(f"Train samples: {len(train_loader.dataset)}  "
-              f"Val samples: {len(val_loader.dataset)}\n")
+    backbone_mode = ("frozen" if args.freeze_backbone else
+                     f"lr×{args.backbone_lr_mult}") if args.pretrained_backbone else "scratch"
+    logger._w(f"\nYOLOv8 (ResNet50) | VOC 2012 | img={args.img_size} | "
+              f"bs={args.batch_size} | lr={args.lr} | epochs={args.epochs} | "
+              f"backbone={backbone_mode}")
+    logger._w(f"Train: {len(train_loader.dataset)}  "
+              f"Val: {len(val_loader.dataset)}")
+
+    # ── epoch summary table ───────────────────────────────────────────────
+    HDR = (f"\n  {'Epoch':>9}  {'Train':>8}  {'Val':>8}  "
+           f"{'mAP@0.5':>10}  {'LR':>9}  {'Time':>7}")
+    SEP = "  " + "─" * 63
+    logger._w(HDR)
+    logger._w(SEP)
+
+    last_map_results = None
 
     for epoch in range(1, args.epochs + 1):
         t0         = time.time()
@@ -265,25 +433,33 @@ def run_yolo_training(args, device: torch.device, logger: TrainLogger) -> YOLOv8
         train_losses.append(train_loss)
         val_losses.append(val_loss)
 
-        map_str = ""
+        map_val = None
         run_map = (args.eval_map_every > 0 and
                    (epoch % args.eval_map_every == 0 or epoch == args.epochs))
         if run_map:
-            map_val = eval_map(model, val_loader, device, img_size=args.img_size)
-            map_str = f"  mAP@0.5={map_val:.4f}"
+            map_results      = eval_map(model, val_loader, device,
+                                        img_size=args.img_size)
+            map_val          = map_results["mAP"]
+            last_map_results = map_results
 
-        elapsed = time.time() - t0
-        logger._w(
-            f"Epoch {epoch:>3}/{args.epochs}  "
-            f"train={train_loss:.4f}  val={val_loss:.4f}  "
-            f"lr={scheduler.get_last_lr()[0]:.2e}"
-            f"{map_str}  time={elapsed:.1f}s"
-        )
-
+        elapsed  = time.time() - t0
+        map_col  = f"{map_val * 100:.2f}%" if map_val is not None else "–"
+        ckpt_col = ""
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             torch.save(model.state_dict(), args.save_path)
-            logger._w(f"  → saved checkpoint (val_loss={val_loss:.4f})")
+            ckpt_col = "  ✓"
+
+        epoch_str = f"{epoch}/{args.epochs}"
+        logger._w(
+            f"  {epoch_str:>9}  "
+            f"{train_loss:>8.4f}  "
+            f"{val_loss:>8.4f}  "
+            f"{map_col:>10}  "
+            f"{scheduler.get_last_lr()[-1]:>9.2e}  "
+            f"{elapsed:>6.1f}s"
+            f"{ckpt_col}"
+        )
 
     if args.plot:
         os.makedirs("results/yolo", exist_ok=True)
@@ -302,8 +478,15 @@ def run_yolo_training(args, device: torch.device, logger: TrainLogger) -> YOLOv8
         except Exception as e:
             logger._w(f"Plot failed: {e}")
 
-    logger._w(f"\nTraining complete. Best val loss: {best_val_loss:.4f}")
-    logger._w(f"Checkpoint: {args.save_path}")
+    logger._w(SEP)
+    logger._w(f"\nBest val loss: {best_val_loss:.4f}  |  Checkpoint: {args.save_path}")
+
+    logger._w("\n─── Final mAP@0.5 (val) ───")
+    # reuse last computed mAP rather than re-running the full eval pass
+    final_map = last_map_results or eval_map(model, val_loader, device,
+                                             img_size=args.img_size)
+    _log_map_table(final_map, logger)
+
     return model
 
 
@@ -322,7 +505,15 @@ def parse_args():
     p.add_argument("--voc_dir",      type=str,   default="./data/VOC")
     p.add_argument("--device",       type=str,   default="auto")
     p.add_argument("--seed",         type=int,   default=42)
-    p.add_argument("--eval_map_every", type=int, default=10,
+    p.add_argument("--pretrained_backbone", action=argparse.BooleanOptionalAction,
+                   default=True,
+                   help="Use ImageNet-pretrained ResNet50 backbone (default: True)")
+    p.add_argument("--freeze_backbone", action=argparse.BooleanOptionalAction,
+                   default=False,
+                   help="Freeze backbone weights — only train neck + heads")
+    p.add_argument("--backbone_lr_mult", type=float, default=0.1,
+                   help="Backbone LR = lr × this factor (default: 0.1)")
+    p.add_argument("--eval_map_every", type=int, default=1,
                    help="Compute mAP@0.5 on val every N epochs (0 = disabled)")
     p.add_argument("--log",  action=argparse.BooleanOptionalAction, default=True)
     p.add_argument("--plot", action="store_true")
