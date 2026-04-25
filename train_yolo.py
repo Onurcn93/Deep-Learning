@@ -275,10 +275,12 @@ class YOLOv8Loss(nn.Module):
 def get_loaders(args) -> tuple[DataLoader, DataLoader]:
     train_ds = VOCDetectionDataset(args.voc_dir, split="train",
                                    image_size=args.img_size, download=True,
-                                   person_only=args.person_only)
+                                   person_only=args.person_only,
+                                   augment=args.augment)
     val_ds   = VOCDetectionDataset(args.voc_dir, split="val",
                                    image_size=args.img_size, download=True,
-                                   person_only=args.person_only)
+                                   person_only=args.person_only,
+                                   augment=False)
     train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True,
                               num_workers=2, collate_fn=detection_collate,
                               pin_memory=True)
@@ -410,14 +412,16 @@ def run_yolo_training(args, device: torch.device, logger: TrainLogger) -> YOLOv8
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=args.epochs)
 
     best_val_loss = float("inf")
+    best_map      = -1.0
     train_losses, val_losses = [], []
 
     backbone_mode = ("frozen" if args.freeze_backbone else
                      f"lr×{args.backbone_lr_mult}") if args.pretrained_backbone else "scratch"
     mode_str = "person-only (1 class)" if args.person_only else f"{num_classes} classes"
+    aug_str  = "flip+jitter+scale_crop+mosaic" if args.augment else "none"
     logger._w(f"\nYOLOv8 (ResNet50) | VOC 2012 | {mode_str} | img={args.img_size} | "
               f"bs={args.batch_size} | lr={args.lr} | epochs={args.epochs} | "
-              f"backbone={backbone_mode}")
+              f"backbone={backbone_mode} | aug={aug_str}")
     logger._w(f"Train: {len(train_loader.dataset)}  "
               f"Val: {len(val_loader.dataset)}")
 
@@ -455,6 +459,8 @@ def run_yolo_training(args, device: torch.device, logger: TrainLogger) -> YOLOv8
         ckpt_col = ""
         if val_loss < best_val_loss:
             best_val_loss = val_loss
+        if map_val is not None and map_val > best_map:
+            best_map = map_val
             torch.save(model.state_dict(), args.save_path)
             ckpt_col = "  ✓"
 
@@ -487,7 +493,7 @@ def run_yolo_training(args, device: torch.device, logger: TrainLogger) -> YOLOv8
             logger._w(f"Plot failed: {e}")
 
     logger._w(SEP)
-    logger._w(f"\nBest val loss: {best_val_loss:.4f}  |  Checkpoint: {args.save_path}")
+    logger._w(f"\nBest mAP@0.5: {best_map * 100:.2f}%  |  Checkpoint: {args.save_path}")
 
     logger._w("\n─── Final mAP@0.5 (val) ───")
     # reuse last computed mAP rather than re-running the full eval pass
@@ -526,6 +532,8 @@ def parse_args():
                    help="Compute mAP@0.5 on val every N epochs (0 = disabled)")
     p.add_argument("--person_only", action=argparse.BooleanOptionalAction, default=True,
                    help="Detect person class only — num_classes=1 (default: True)")
+    p.add_argument("--augment", action=argparse.BooleanOptionalAction, default=True,
+                   help="Apply detection augmentation to train split (default: True)")
     p.add_argument("--log",  action=argparse.BooleanOptionalAction, default=True)
     p.add_argument("--plot", action="store_true")
     return p.parse_args()
