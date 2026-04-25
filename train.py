@@ -79,12 +79,18 @@ def get_loaders(
     elif data_params.dataset == "cifar10":
         train_ds = datasets.CIFAR10(data_params.data_dir, train=True,  download=True, transform=train_tf)
         val_ds   = datasets.CIFAR10(data_params.data_dir, train=False, download=True, transform=val_tf)
-    else:  # voc
+    elif data_params.dataset == "voc":
         from datasets.voc import VOCClassification
         train_ds = VOCClassification(data_params.voc_dir, split="train",
                                      image_size=data_params.voc_image_size, download=True)
         val_ds   = VOCClassification(data_params.voc_dir, split="val",
                                      image_size=data_params.voc_image_size, download=True)
+    else:  # voc_person
+        from datasets.voc import VOCBinaryClassification
+        train_ds = VOCBinaryClassification(data_params.voc_dir, split="train",
+                                           image_size=data_params.voc_image_size, download=True)
+        val_ds   = VOCBinaryClassification(data_params.voc_dir, split="val",
+                                           image_size=data_params.voc_image_size, download=True)
 
     train_loader = DataLoader(train_ds, batch_size=training_params.batch_size,
                               shuffle=True,  num_workers=data_params.num_workers)

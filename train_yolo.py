@@ -33,7 +33,7 @@ from torch import Tensor
 from torch.utils.data import DataLoader
 from torchvision.ops import complete_box_iou_loss, box_iou
 
-from datasets.voc import VOCDetectionDataset, detection_collate, NUM_CLASSES, VOC_CLASSES
+from datasets.voc import VOCDetectionDataset, detection_collate, NUM_CLASSES, VOC_CLASSES, NUM_CLASSES_PERSON
 from models.YOLO import YOLOv8
 from utils.detection import decode_predictions, compute_map
 from utils.logger import TrainLogger
@@ -274,9 +274,11 @@ class YOLOv8Loss(nn.Module):
 
 def get_loaders(args) -> tuple[DataLoader, DataLoader]:
     train_ds = VOCDetectionDataset(args.voc_dir, split="train",
-                                   image_size=args.img_size, download=True)
+                                   image_size=args.img_size, download=True,
+                                   person_only=args.person_only)
     val_ds   = VOCDetectionDataset(args.voc_dir, split="val",
-                                   image_size=args.img_size, download=True)
+                                   image_size=args.img_size, download=True,
+                                   person_only=args.person_only)
     train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True,
                               num_workers=2, collate_fn=detection_collate,
                               pin_memory=True)
@@ -329,10 +331,11 @@ def train_one_epoch(
 
 @torch.no_grad()
 def eval_map(
-    model:   YOLOv8,
-    loader:  DataLoader,
-    device:  torch.device,
-    img_size: int = 640,
+    model:       YOLOv8,
+    loader:      DataLoader,
+    device:      torch.device,
+    num_classes: int   = NUM_CLASSES,
+    img_size:    int   = 640,
     conf_thresh: float = 0.25,
     iou_thresh:  float = 0.45,
 ) -> dict:
@@ -345,13 +348,13 @@ def eval_map(
         preds   = decode_predictions(raw.cpu(), conf_thresh=conf_thresh, iou_thresh=iou_thresh)
         all_preds.extend(preds)
         all_tgts.extend([t.cpu() for t in targets])
-    return compute_map(all_preds, all_tgts, num_classes=NUM_CLASSES, iou_thresh=0.5)
+    return compute_map(all_preds, all_tgts, num_classes=num_classes, iou_thresh=0.5)
 
 
-def _log_map_table(results: dict, logger: TrainLogger) -> None:
+def _log_map_table(results: dict, logger: TrainLogger, class_names: list[str]) -> None:
     logger._w(f"\n  {'Class':<20} {'AP':>8}")
     logger._w(f"  {'-'*30}")
-    for c, name in enumerate(VOC_CLASSES):
+    for c, name in enumerate(class_names):
         ap = results.get(f"AP_{c}", 0.0)
         logger._w(f"  {name:<20} {ap * 100:>7.2f}%")
     logger._w(f"  {'─'*30}")
@@ -380,12 +383,15 @@ def validate(
 # ---------------------------------------------------------------------------
 
 def run_yolo_training(args, device: torch.device, logger: TrainLogger) -> YOLOv8:
+    num_classes  = NUM_CLASSES_PERSON if args.person_only else NUM_CLASSES
+    class_names  = ["person"] if args.person_only else VOC_CLASSES
+
     train_loader, val_loader = get_loaders(args)
     model   = YOLOv8(
-        num_classes=NUM_CLASSES,
+        num_classes=num_classes,
         pretrained_backbone=args.pretrained_backbone,
     ).to(device)
-    loss_fn = YOLOv8Loss(num_classes=NUM_CLASSES, img_size=args.img_size)
+    loss_fn = YOLOv8Loss(num_classes=num_classes, img_size=args.img_size)
 
     if args.freeze_backbone:
         for p in model.backbone_parameters():
@@ -408,7 +414,8 @@ def run_yolo_training(args, device: torch.device, logger: TrainLogger) -> YOLOv8
 
     backbone_mode = ("frozen" if args.freeze_backbone else
                      f"lr×{args.backbone_lr_mult}") if args.pretrained_backbone else "scratch"
-    logger._w(f"\nYOLOv8 (ResNet50) | VOC 2012 | img={args.img_size} | "
+    mode_str = "person-only (1 class)" if args.person_only else f"{num_classes} classes"
+    logger._w(f"\nYOLOv8 (ResNet50) | VOC 2012 | {mode_str} | img={args.img_size} | "
               f"bs={args.batch_size} | lr={args.lr} | epochs={args.epochs} | "
               f"backbone={backbone_mode}")
     logger._w(f"Train: {len(train_loader.dataset)}  "
@@ -438,6 +445,7 @@ def run_yolo_training(args, device: torch.device, logger: TrainLogger) -> YOLOv8
                    (epoch % args.eval_map_every == 0 or epoch == args.epochs))
         if run_map:
             map_results      = eval_map(model, val_loader, device,
+                                        num_classes=num_classes,
                                         img_size=args.img_size)
             map_val          = map_results["mAP"]
             last_map_results = map_results
@@ -484,8 +492,9 @@ def run_yolo_training(args, device: torch.device, logger: TrainLogger) -> YOLOv8
     logger._w("\n─── Final mAP@0.5 (val) ───")
     # reuse last computed mAP rather than re-running the full eval pass
     final_map = last_map_results or eval_map(model, val_loader, device,
+                                             num_classes=num_classes,
                                              img_size=args.img_size)
-    _log_map_table(final_map, logger)
+    _log_map_table(final_map, logger, class_names)
 
     return model
 
@@ -515,6 +524,8 @@ def parse_args():
                    help="Backbone LR = lr × this factor (default: 0.1)")
     p.add_argument("--eval_map_every", type=int, default=1,
                    help="Compute mAP@0.5 on val every N epochs (0 = disabled)")
+    p.add_argument("--person_only", action=argparse.BooleanOptionalAction, default=True,
+                   help="Detect person class only — num_classes=1 (default: True)")
     p.add_argument("--log",  action=argparse.BooleanOptionalAction, default=True)
     p.add_argument("--plot", action="store_true")
     return p.parse_args()

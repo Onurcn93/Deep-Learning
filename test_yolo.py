@@ -12,6 +12,7 @@ Key flags:
     --voc_dir      Root directory for VOCdevkit (default: ./data/VOC)
     --device       auto | cuda | cpu
     --batch_size   Evaluation batch size (default: 8)
+    --person_only  Evaluate person-only checkpoint (default: True)
 """
 
 from __future__ import annotations
@@ -21,7 +22,8 @@ import argparse
 import torch
 from torch.utils.data import DataLoader
 
-from datasets.voc import VOCDetectionDataset, detection_collate, VOC_CLASSES, NUM_CLASSES
+from datasets.voc import (VOCDetectionDataset, detection_collate,
+                           VOC_CLASSES, NUM_CLASSES, NUM_CLASSES_PERSON)
 from models.YOLO import YOLOv8
 from utils.detection import decode_predictions, compute_map
 
@@ -35,6 +37,7 @@ def run_yolo_test(
     model:       YOLOv8,
     loader:      DataLoader,
     device:      torch.device,
+    num_classes: int   = NUM_CLASSES,
     img_size:    int   = 640,
     conf_thresh: float = 0.25,
     iou_thresh:  float = 0.45,
@@ -42,7 +45,7 @@ def run_yolo_test(
 ) -> dict:
     model.eval()
 
-    all_predictions: list[dict]   = []
+    all_predictions: list[dict]         = []
     all_targets:     list[torch.Tensor] = []
 
     for imgs, targets in loader:
@@ -56,7 +59,7 @@ def run_yolo_test(
         all_targets.extend([t.cpu() for t in targets])
 
     results = compute_map(all_predictions, all_targets,
-                          num_classes=NUM_CLASSES, iou_thresh=map_iou)
+                          num_classes=num_classes, iou_thresh=map_iou)
     return results
 
 
@@ -64,7 +67,7 @@ def run_yolo_test(
 # Pretty-print results
 # ---------------------------------------------------------------------------
 
-def print_results(results: dict, map_iou: float) -> None:
+def print_results(results: dict, class_names: list[str], map_iou: float) -> None:
     print(f"\n{'='*50}")
     print(f"  YOLOv8n — PASCAL VOC 2012 val  (IoU@{map_iou:.2f})")
     print(f"{'='*50}")
@@ -72,7 +75,7 @@ def print_results(results: dict, map_iou: float) -> None:
     print(f"{'-'*50}")
     print(f"  {'Class':<30} {'AP':>8}")
     print(f"{'-'*50}")
-    for c, name in enumerate(VOC_CLASSES):
+    for c, name in enumerate(class_names):
         key = f"AP_{c}"
         if key in results:
             print(f"  {name:<30} {results[key]*100:>7.2f}%")
@@ -95,6 +98,8 @@ def parse_args():
     p.add_argument("--voc_dir",     type=str,   default="./data/VOC")
     p.add_argument("--batch_size",  type=int,   default=8)
     p.add_argument("--device",      type=str,   default="auto")
+    p.add_argument("--person_only", action=argparse.BooleanOptionalAction, default=True,
+                   help="Evaluate person-only checkpoint (default: True)")
     return p.parse_args()
 
 
@@ -108,24 +113,27 @@ if __name__ == "__main__":
         device = torch.device(args.device)
     print(f"Device: {device}")
 
-    # Load model
-    model = YOLOv8(num_classes=NUM_CLASSES).to(device)
+    num_classes = NUM_CLASSES_PERSON if args.person_only else NUM_CLASSES
+    class_names = ["person"] if args.person_only else VOC_CLASSES
+
+    model = YOLOv8(num_classes=num_classes).to(device)
     ckpt  = torch.load(args.model_path, map_location=device)
     model.load_state_dict(ckpt)
     print(f"Loaded checkpoint: {args.model_path}")
 
-    # Val loader
     val_ds = VOCDetectionDataset(args.voc_dir, split="val",
-                                 image_size=args.img_size, download=True)
+                                 image_size=args.img_size, download=True,
+                                 person_only=args.person_only)
     loader = DataLoader(val_ds, batch_size=args.batch_size, shuffle=False,
                         num_workers=2, collate_fn=detection_collate)
     print(f"Val samples: {len(val_ds)}")
 
     results = run_yolo_test(
         model, loader, device,
+        num_classes=num_classes,
         img_size=args.img_size,
         conf_thresh=args.conf_thresh,
         iou_thresh=args.iou_thresh,
         map_iou=args.map_iou,
     )
-    print_results(results, args.map_iou)
+    print_results(results, class_names, args.map_iou)

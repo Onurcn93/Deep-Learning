@@ -1,12 +1,14 @@
 """PASCAL VOC 2012 dataset wrappers.
 
-Two modes:
-  - VOCClassification : single-label classification (20 classes).
-                        Label = class of the largest bounding-box object.
-  - VOCDetection      : object detection.
-                        Returns image + list of (x1,y1,x2,y2,class_idx) boxes.
+Three modes:
+  - VOCClassification       : single-label classification (20 classes).
+                              Label = class of the largest bounding-box object.
+  - VOCBinaryClassification : binary classification — person present (1) or not (0).
+  - VOCDetectionDataset     : object detection.
+                              Returns image + list of (x1,y1,x2,y2,class_idx) boxes.
+                              Pass person_only=True to restrict to person class only (num_classes=1).
 
-Both are built on torchvision.datasets.VOCDetection so the raw XML
+All are built on torchvision.datasets.VOCDetection so the raw XML
 annotations are parsed once and shared.
 """
 
@@ -24,8 +26,9 @@ VOC_CLASSES = [
     "diningtable", "dog", "horse", "motorbike", "person",
     "pottedplant", "sheep", "sofa", "train", "tvmonitor",
 ]
-CLASS_TO_IDX = {c: i for i, c in enumerate(VOC_CLASSES)}
-NUM_CLASSES  = len(VOC_CLASSES)   # 20
+CLASS_TO_IDX  = {c: i for i, c in enumerate(VOC_CLASSES)}
+NUM_CLASSES   = len(VOC_CLASSES)   # 20
+NUM_CLASSES_PERSON = 1             # person-only detection mode
 
 
 # ---------------------------------------------------------------------------
@@ -127,6 +130,55 @@ class VOCClassification(Dataset):
 
 
 # ---------------------------------------------------------------------------
+# Binary classification dataset (person / no-person)
+# ---------------------------------------------------------------------------
+
+class VOCBinaryClassification(Dataset):
+    """PASCAL VOC 2012 — binary classification: person present (1) or not (0).
+
+    Args:
+        root       : Root directory where VOCdevkit will be downloaded/found.
+        split      : 'train' or 'val'.
+        image_size : Resize target (square).
+        download   : Download dataset if not found.
+    """
+
+    def __init__(
+        self,
+        root:       str,
+        split:      str  = "train",
+        image_size: int  = 224,
+        download:   bool = True,
+    ) -> None:
+        self._base = VOCDetection(
+            root=root, year="2012",
+            image_set=split,
+            download=download,
+        )
+        self.transform = classification_transforms(train=(split == "train"),
+                                                   image_size=image_size)
+        self._samples: list[tuple[int, int]] = [
+            (i, self._has_person(self._base[i][1]))
+            for i in range(len(self._base))
+        ]
+
+    @staticmethod
+    def _has_person(annotation: dict) -> int:
+        objects = annotation["annotation"].get("object", [])
+        if isinstance(objects, dict):
+            objects = [objects]
+        return int(any(o.get("name") == "person" for o in objects))
+
+    def __len__(self) -> int:
+        return len(self._samples)
+
+    def __getitem__(self, idx: int):
+        base_idx, label = self._samples[idx]
+        img, _ = self._base[base_idx]
+        return self.transform(img), label
+
+
+# ---------------------------------------------------------------------------
 # Detection dataset
 # ---------------------------------------------------------------------------
 
@@ -148,17 +200,19 @@ class VOCDetectionDataset(Dataset):
 
     def __init__(
         self,
-        root:       str,
-        split:      str  = "train",
-        image_size: int  = 640,
-        download:   bool = True,
+        root:        str,
+        split:       str  = "train",
+        image_size:  int  = 640,
+        download:    bool = True,
+        person_only: bool = False,
     ) -> None:
         self._base = VOCDetection(
             root=root, year="2012",
             image_set=split,
             download=download,
         )
-        self.image_size = image_size
+        self.image_size  = image_size
+        self.person_only = person_only
         self.img_transform = detection_transforms(image_size)
 
     def __len__(self) -> int:
@@ -178,14 +232,19 @@ class VOCDetectionDataset(Dataset):
         boxes = []
         for obj in objects:
             name = obj.get("name", "")
-            if name not in CLASS_TO_IDX:
-                continue
+            if self.person_only:
+                if name != "person":
+                    continue
+                cls = 0.0
+            else:
+                if name not in CLASS_TO_IDX:
+                    continue
+                cls = float(CLASS_TO_IDX[name])
             bb  = obj["bndbox"]
             x1  = float(bb["xmin"]) * scale_x
             y1  = float(bb["ymin"]) * scale_y
             x2  = float(bb["xmax"]) * scale_x
             y2  = float(bb["ymax"]) * scale_y
-            cls = float(CLASS_TO_IDX[name])
             boxes.append([x1, y1, x2, y2, cls])
 
         target = torch.tensor(boxes, dtype=torch.float32) if boxes \

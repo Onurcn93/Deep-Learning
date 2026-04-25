@@ -289,10 +289,9 @@ class YOLOv8(nn.Module):
             y2 = (cy + bh / 2).unsqueeze(-1)
 
             cls_conf = cls_logits.sigmoid()
-            obj_conf = cls_conf.max(dim=1, keepdim=True).values
 
             boxes = torch.cat([x1, y1, x2, y2], dim=-1).view(B, -1, 4)
-            obj   = obj_conf.permute(0, 2, 3, 1).reshape(B, -1, 1)
+            obj   = torch.ones(B, H * W, 1, device=cls_logits.device)
             clspr = cls_conf.permute(0, 2, 3, 1).reshape(B, -1, self.num_classes)
 
             all_preds.append(torch.cat([boxes, obj, clspr], dim=-1))

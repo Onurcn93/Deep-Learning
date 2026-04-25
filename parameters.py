@@ -120,7 +120,7 @@ def get_params() -> Tuple[DataParams, ModelParams, TrainingParams]:
 
     # General
     parser.add_argument("--mode",    choices=["train", "test", "both"], default="both")
-    parser.add_argument("--dataset", choices=["mnist", "cifar10", "voc"], default="mnist")
+    parser.add_argument("--dataset", choices=["mnist", "cifar10", "voc", "voc_person"], default="mnist")
     parser.add_argument("--model",   choices=["mlp", "cnn", "vgg", "resnet", "mobilenet"], default="mlp")
     parser.add_argument("--device",  type=str,  default="auto", help="Device: auto detects cuda/mps/cpu, or specify explicitly")
     parser.add_argument("--seed",    type=int,  default=42)
@@ -235,11 +235,16 @@ def get_params() -> Tuple[DataParams, ModelParams, TrainingParams]:
         mean = (0.4914, 0.4822, 0.4465)
         std  = (0.2023, 0.1994, 0.2010)
         num_classes = 10
-    else:  # voc
+    elif args.dataset == "voc":
         input_size = 3 * args.voc_image_size * args.voc_image_size
         mean = (0.485, 0.456, 0.406)
         std  = (0.229, 0.224, 0.225)
         num_classes = 20
+    else:  # voc_person
+        input_size = 3 * args.voc_image_size * args.voc_image_size
+        mean = (0.485, 0.456, 0.406)
+        std  = (0.229, 0.224, 0.225)
+        num_classes = 2  # binary: person (1) / no-person (0)
 
     data_params = DataParams(
         dataset        = args.dataset,
