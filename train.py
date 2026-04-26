@@ -671,7 +671,8 @@ def run_training(
     logger.close()
 
     if training_params.plot:
-        plot_training_curves(train_losses, val_losses, train_accs, val_accs, out_dir="results/resnet", title=config_title)
+        plot_training_curves(train_losses, val_losses, train_accs, val_accs,
+                             out_dir=f"results/{model_params.model}", title=config_title)
 
 
 def run_augmix_training(
@@ -762,5 +763,6 @@ def run_augmix_training(
     logger.close()
 
     if training_params.plot:
-        plot_training_curves(train_losses, val_losses, train_accs, val_accs, out_dir="results/resnet", title=config_title)
+        plot_training_curves(train_losses, val_losses, train_accs, val_accs,
+                             out_dir=f"results/{model_params.model}", title=config_title)
 

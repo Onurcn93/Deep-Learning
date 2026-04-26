@@ -41,23 +41,38 @@ def build_pretrained_model(
     num_classes:  int = 10,
     image_size:   int = 32,
 ) -> nn.Module:
-    """Load a pretrained ResNet-18 and adapt it for transfer learning.
+    """Load a pretrained backbone and adapt it for transfer learning.
+
+    Supports ResNet-18 and DenseNet-169.
 
     Args:
-        model_params: Architecture parameters (transfer_mode).
+        model_params: Architecture parameters (model name, transfer_mode).
         num_classes:  Number of output classes.
+        image_size:   Input image size (used to adapt stem for small inputs).
 
     Returns:
         Adapted ``nn.Module`` ready for training.
     """
-    model = tv_models.resnet18(weights=tv_models.ResNet18_Weights.DEFAULT)
+    if model_params.model == "densenet":
+        model = tv_models.densenet169(weights=tv_models.DenseNet169_Weights.DEFAULT)
+        if model_params.transfer_mode == "resizeFreeze":
+            for param in model.parameters():
+                param.requires_grad = False
+            model.classifier = nn.Linear(model.classifier.in_features, num_classes)
+        elif model_params.transfer_mode == "modifyFinetune":
+            if image_size <= 64:
+                model.features.conv0 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
+                model.features.pool0 = nn.Identity()  # type: ignore[assignment]
+            model.classifier = nn.Linear(model.classifier.in_features, num_classes)
+        return model
 
+    # Default: ResNet-18
+    model = tv_models.resnet18(weights=tv_models.ResNet18_Weights.DEFAULT)
     if model_params.transfer_mode == "resizeFreeze":
         # Freeze entire backbone — only the new FC head will train
         for param in model.parameters():
             param.requires_grad = False
         model.fc = nn.Linear(model.fc.in_features, num_classes)
-
     elif model_params.transfer_mode == "modifyFinetune":
         # For small inputs (e.g. 32×32 CIFAR) remove aggressive downsampling;
         # for larger inputs (e.g. 224×224 VOC) keep the original stem.
@@ -65,7 +80,6 @@ def build_pretrained_model(
             model.conv1   = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
             model.maxpool = nn.Identity()  # type: ignore[assignment]
         model.fc = nn.Linear(model.fc.in_features, num_classes)
-
     return model
 
 
@@ -118,6 +132,13 @@ def build_model(
             raise ValueError("MobileNetV2 is designed for 3-channel images; use cifar10 with mobilenet.")
         return MobileNetV2(num_classes=nc)
 
+    if name == "densenet":
+        if data_params.dataset == "mnist":
+            raise ValueError("DenseNet-169 is designed for 3-channel images; use cifar10 with densenet.")
+        model = tv_models.densenet169(weights=None)
+        model.classifier = nn.Linear(model.classifier.in_features, nc)
+        return model
+
     raise ValueError(f"Unknown model: {name}")
 
 
@@ -130,7 +151,8 @@ def build_config_title(
     parts = []
 
     if model_params.transfer_mode != "none":
-        parts.append(f"ResNet18-pretrained | {model_params.transfer_mode}")
+        backbone = "DenseNet169" if model_params.model == "densenet" else "ResNet18"
+        parts.append(f"{backbone}-pretrained | {model_params.transfer_mode}")
     else:
         name = model_params.model
         if name == "mlp":
@@ -146,6 +168,8 @@ def build_config_title(
             parts.append(f"ResNet {model_params.resnet_layers}")
         elif name == "mobilenet":
             parts.append("MobileNetV2")
+        elif name == "densenet":
+            parts.append("DenseNet-169")
     parts.append(data_params.dataset)
     parts.append(f"lr={training_params.learning_rate}")
     parts.append(f"bs={training_params.batch_size}")

@@ -121,7 +121,7 @@ def get_params() -> Tuple[DataParams, ModelParams, TrainingParams]:
     # General
     parser.add_argument("--mode",    choices=["train", "test", "both"], default="both")
     parser.add_argument("--dataset", choices=["mnist", "cifar10", "voc", "voc_person"], default="mnist")
-    parser.add_argument("--model",   choices=["mlp", "cnn", "vgg", "resnet", "mobilenet"], default="mlp")
+    parser.add_argument("--model",   choices=["mlp", "cnn", "vgg", "resnet", "mobilenet", "densenet"], default="mlp")
     parser.add_argument("--device",  type=str,  default="auto", help="Device: auto detects cuda/mps/cpu, or specify explicitly")
     parser.add_argument("--seed",    type=int,  default=42)
     parser.add_argument("--plot",    action="store_true",
