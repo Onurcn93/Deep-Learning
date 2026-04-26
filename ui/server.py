@@ -2,9 +2,7 @@
 
 Usage:
     # from project root:
-    python ui/server.py --yolo_path yolo_best.pth
-    python ui/server.py --yolo_path yolo_best.pth --resnet_path best_model.pth --resnet_classes 10
-    python ui/server.py --yolo_path yolo_best.pth --resnet_path best_model.pth --resnet_classes 20
+    python ui/server.py
 
 Requires:
     pip install flask
@@ -30,7 +28,7 @@ from PIL import Image, ImageDraw
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from datasets.voc import VOC_CLASSES, NUM_CLASSES
+from datasets.voc import VOC_CLASSES, NUM_CLASSES, NUM_CLASSES_PERSON
 from models.YOLO import YOLOv8
 from utils.detection import decode_predictions
 from utils.gradcam import GradCAM, get_target_layer
@@ -44,6 +42,8 @@ DEVICE        = torch.device('cpu')
 YOLO_MODEL    = None
 RESNET_MODEL  = None
 RESNET_CLASSES: list[str] = []
+PERSON_ONLY   = True          # set by --person_only flag at startup
+YOLO_CLASS_NAMES: list[str] = ['person']
 
 IMAGENET_MEAN = [0.485, 0.456, 0.406]
 IMAGENET_STD  = [0.229, 0.224, 0.225]
@@ -104,7 +104,7 @@ def inference():
             boxes_out.append({
                 'x1': round(x1 / 640, 4), 'y1': round(y1 / 640, 4),
                 'x2': round(x2 / 640, 4), 'y2': round(y2 / 640, 4),
-                'class_name': VOC_CLASSES[label] if label < len(VOC_CLASSES) else str(label),
+                'class_name': YOLO_CLASS_NAMES[label] if label < len(YOLO_CLASS_NAMES) else str(label),
                 'confidence': round(score, 3),
             })
 
@@ -207,7 +207,7 @@ def _pil_to_b64(pil: Image.Image) -> str:
 # ── Model loading ─────────────────────────────────────────────────────────────
 
 def load_models(args) -> None:
-    global YOLO_MODEL, RESNET_MODEL, RESNET_CLASSES, DEVICE
+    global YOLO_MODEL, RESNET_MODEL, RESNET_CLASSES, DEVICE, PERSON_ONLY, YOLO_CLASS_NAMES
 
     if args.device == 'auto':
         DEVICE = torch.device(
@@ -218,15 +218,19 @@ def load_models(args) -> None:
         DEVICE = torch.device(args.device)
     print(f'Device: {DEVICE}')
 
+    PERSON_ONLY = args.person_only
+
     # YOLO
     yolo_path = os.path.join(os.path.dirname(UI_DIR), args.yolo_path) \
                 if not os.path.isabs(args.yolo_path) else args.yolo_path
     if args.yolo_path and os.path.exists(yolo_path):
-        m = YOLOv8(num_classes=NUM_CLASSES).to(DEVICE)
+        n_cls = NUM_CLASSES_PERSON if args.person_only else NUM_CLASSES
+        YOLO_CLASS_NAMES = ['person'] if args.person_only else list(VOC_CLASSES)
+        m = YOLOv8(num_classes=n_cls).to(DEVICE)
         m.load_state_dict(torch.load(yolo_path, map_location=DEVICE))
         m.eval()
         YOLO_MODEL = m
-        print(f'YOLO loaded:   {yolo_path}')
+        print(f'YOLO loaded:   {yolo_path}  ({"person-only" if args.person_only else "20 classes"})')
     else:
         print(f'YOLO not found ({args.yolo_path}) — detection disabled')
 
@@ -244,11 +248,16 @@ def load_models(args) -> None:
             m = ResNet(BasicBlock, [2, 2, 2, 2], num_classes=n_cls)
         m.load_state_dict(torch.load(resnet_path, map_location=DEVICE))
         m.to(DEVICE).eval()
-        RESNET_MODEL   = m
-        RESNET_CLASSES = VOC_CLASSES[:n_cls] if n_cls <= 20 else [str(i) for i in range(n_cls)]
-        if n_cls == 10:
-            RESNET_CLASSES = ['airplane','automobile','bird','cat','deer',
-                              'dog','frog','horse','ship','truck']
+        RESNET_MODEL = m
+        if n_cls == 2:
+            RESNET_CLASSES = ['no_person', 'person']
+        elif n_cls == 10:
+            RESNET_CLASSES = ['airplane', 'automobile', 'bird', 'cat', 'deer',
+                              'dog', 'frog', 'horse', 'ship', 'truck']
+        elif n_cls <= 20:
+            RESNET_CLASSES = list(VOC_CLASSES[:n_cls])
+        else:
+            RESNET_CLASSES = [str(i) for i in range(n_cls)]
         print(f'ResNet loaded: {resnet_path}  ({n_cls} classes, arch={args.resnet_arch})')
     else:
         print(f'ResNet not found ({args.resnet_path}) — GradCAM disabled')
@@ -258,15 +267,13 @@ def load_models(args) -> None:
 
 def parse_args():
     p = argparse.ArgumentParser(description='VocAssist inference server')
-    p.add_argument('--yolo_path',      type=str, default='yolo_best.pth',
-                   help='Path to YOLOv8 checkpoint (relative to project root)')
-    p.add_argument('--resnet_path',    type=str, default='',
-                   help='Path to ResNet checkpoint (optional)')
-    p.add_argument('--resnet_arch',    type=str, default='custom',
-                   choices=['custom', 'pretrained'],
-                   help='custom = project ResNet class | pretrained = torchvision resnet18')
-    p.add_argument('--resnet_classes', type=int, default=10,
-                   help='Number of output classes for the ResNet checkpoint')
+    p.add_argument('--yolo_path',      type=str, default='yolo_best.pth')
+    p.add_argument('--resnet_path',    type=str, default='best_model_person.pth')
+    p.add_argument('--resnet_arch',    type=str, default='pretrained',
+                   choices=['custom', 'pretrained'])
+    p.add_argument('--resnet_classes', type=int, default=2)
+    p.add_argument('--person_only',    action=argparse.BooleanOptionalAction, default=True,
+                   help='Load YOLO as person-only (1 class) checkpoint (default: True)')
     p.add_argument('--device',         type=str, default='auto')
     p.add_argument('--port',           type=int, default=5000)
     p.add_argument('--debug',          action='store_true')

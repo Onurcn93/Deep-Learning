@@ -51,7 +51,7 @@
               <select id="model-select" class="model-select">
                 <option value="ensemble">Ensemble</option>
                 <option value="yolo">YOLOv8 Only</option>
-                <option value="resnet">ResNet-50 Only</option>
+                <option value="resnet">ResNet-18 Only</option>
               </select>
               <svg class="select-arrow" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
                 <polyline points="6 9 12 15 18 9"/>
@@ -158,24 +158,92 @@
 
     <!-- ══ Model Health Section ══ -->
     <section id="section-model-health" class="section hidden">
-      <div class="placeholder-section">
-        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" opacity="0.3">
-          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
-        </svg>
-        <h2>Model Health</h2>
-        <p>Training metrics and evaluation results will appear here.</p>
+      <div class="stats-grid">
+
+        <!-- YOLOv8n -->
+        <div class="stat-card">
+          <div class="stat-card-header">
+            <span class="metric-dot teal"></span>
+            <span class="stat-card-title">YOLOv8n — Person Detection</span>
+            <span class="stat-card-badge teal">Detection</span>
+          </div>
+          <div class="stat-row"><span class="stat-label">mAP@0.5</span>               <span class="stat-value highlight">59.70%</span></div>
+          <div class="stat-row"><span class="stat-label">Dataset</span>                <span class="stat-value">PASCAL VOC 2012 val</span></div>
+          <div class="stat-row"><span class="stat-label">Val samples</span>            <span class="stat-value">5 823</span></div>
+          <div class="stat-row"><span class="stat-label">Total params</span>           <span class="stat-value">25.55 M</span></div>
+          <div class="stat-row"><span class="stat-label">Backbone params</span>        <span class="stat-value">23.51 M</span></div>
+          <div class="stat-row"><span class="stat-label">Neck + head params</span>     <span class="stat-value">2.04 M</span></div>
+          <div class="stat-row"><span class="stat-label">Best checkpoint epoch</span>  <span class="stat-value">~epoch 20 / 30</span></div>
+          <div class="stat-row"><span class="stat-label">Checkpoint</span>             <span class="stat-value mono">yolo_best.pth</span></div>
+        </div>
+
+        <!-- ResNet-18 -->
+        <div class="stat-card">
+          <div class="stat-card-header">
+            <span class="metric-dot amber"></span>
+            <span class="stat-card-title">ResNet-18 — Person Classifier</span>
+            <span class="stat-card-badge amber">Classifier</span>
+          </div>
+          <div class="stat-row"><span class="stat-label">Val accuracy</span>           <span class="stat-value highlight">90.55%</span></div>
+          <div class="stat-row"><span class="stat-label">Task</span>                   <span class="stat-value">Binary (person / no person)</span></div>
+          <div class="stat-row"><span class="stat-label">Dataset</span>                <span class="stat-value">PASCAL VOC 2012 val</span></div>
+          <div class="stat-row"><span class="stat-label">Total params</span>           <span class="stat-value">11.17 M</span></div>
+          <div class="stat-row"><span class="stat-label">MACs</span>                   <span class="stat-value">557.22 MMac</span></div>
+          <div class="stat-row"><span class="stat-label">Training time</span>          <span class="stat-value">19m 32s</span></div>
+          <div class="stat-row"><span class="stat-label">Epochs trained</span>         <span class="stat-value">20</span></div>
+          <div class="stat-row"><span class="stat-label">Checkpoint</span>             <span class="stat-value mono">best_model_person.pth</span></div>
+        </div>
+
       </div>
     </section>
 
     <!-- ══ Config Section ══ -->
     <section id="section-config" class="section hidden">
-      <div class="placeholder-section">
-        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" opacity="0.3">
-          <circle cx="12" cy="12" r="3"/>
-          <path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/>
-        </svg>
-        <h2>Config</h2>
-        <p>Model hyperparameters and inference settings will appear here.</p>
+      <div class="stats-grid">
+
+        <!-- YOLO config -->
+        <div class="stat-card">
+          <div class="stat-card-header">
+            <span class="metric-dot teal"></span>
+            <span class="stat-card-title">YOLOv8n — Training Config</span>
+            <span class="stat-card-badge teal">Detection</span>
+          </div>
+          <div class="stat-row"><span class="stat-label">Architecture</span>           <span class="stat-value">ResNet50 + PANet + DetHead×3</span></div>
+          <div class="stat-row"><span class="stat-label">Backbone</span>               <span class="stat-value">ResNet50 (ImageNet pretrained)</span></div>
+          <div class="stat-row"><span class="stat-label">Classes</span>                <span class="stat-value">1 (person only)</span></div>
+          <div class="stat-row"><span class="stat-label">Image size</span>             <span class="stat-value highlight">320 × 320</span></div>
+          <div class="stat-row"><span class="stat-label">Batch size</span>             <span class="stat-value">8</span></div>
+          <div class="stat-row"><span class="stat-label">Epochs</span>                 <span class="stat-value">30</span></div>
+          <div class="stat-row"><span class="stat-label">Learning rate</span>          <span class="stat-value">1e-3 (cosine decay)</span></div>
+          <div class="stat-row"><span class="stat-label">Backbone LR mult</span>       <span class="stat-value">0.1×</span></div>
+          <div class="stat-row"><span class="stat-label">Weight decay</span>           <span class="stat-value">5e-4</span></div>
+          <div class="stat-row"><span class="stat-label">Augmentation</span>           <span class="stat-value">flip · jitter · scale-crop · mosaic</span></div>
+          <div class="stat-row"><span class="stat-label">Loss</span>                   <span class="stat-value">BCE + CIoU (TAL assignment)</span></div>
+          <div class="stat-row"><span class="stat-label">NMS IoU thresh</span>         <span class="stat-value">0.45</span></div>
+          <div class="stat-row"><span class="stat-label">Conf thresh</span>            <span class="stat-value">0.25</span></div>
+        </div>
+
+        <!-- ResNet config -->
+        <div class="stat-card">
+          <div class="stat-card-header">
+            <span class="metric-dot amber"></span>
+            <span class="stat-card-title">ResNet-18 — Training Config</span>
+            <span class="stat-card-badge amber">Classifier</span>
+          </div>
+          <div class="stat-row"><span class="stat-label">Architecture</span>           <span class="stat-value">ResNet-18 (torchvision)</span></div>
+          <div class="stat-row"><span class="stat-label">Transfer mode</span>          <span class="stat-value highlight">modifyFinetune</span></div>
+          <div class="stat-row"><span class="stat-label">Backbone</span>               <span class="stat-value">ImageNet pretrained, full fine-tune</span></div>
+          <div class="stat-row"><span class="stat-label">Classes</span>                <span class="stat-value">2 (person / no person)</span></div>
+          <div class="stat-row"><span class="stat-label">Image size</span>             <span class="stat-value highlight">224 × 224</span></div>
+          <div class="stat-row"><span class="stat-label">Batch size</span>             <span class="stat-value">64</span></div>
+          <div class="stat-row"><span class="stat-label">Epochs</span>                 <span class="stat-value">20</span></div>
+          <div class="stat-row"><span class="stat-label">Learning rate</span>          <span class="stat-value">1e-4 (cosine decay)</span></div>
+          <div class="stat-row"><span class="stat-label">Weight decay</span>           <span class="stat-value">1e-4</span></div>
+          <div class="stat-row"><span class="stat-label">Dataset</span>                <span class="stat-value">PASCAL VOC 2012 (voc_person split)</span></div>
+          <div class="stat-row"><span class="stat-label">Loss</span>                   <span class="stat-value">CrossEntropy</span></div>
+          <div class="stat-row"><span class="stat-label">Val split person ratio</span> <span class="stat-value">38.3%</span></div>
+        </div>
+
       </div>
     </section>
 
