@@ -3,6 +3,7 @@ models/__pycache__/
 best_model.pth
 best_model_finetune.pth
 best_model_augmix.pth
+best_model_person.pth
 __pycache__/
 .claude/
 plots/
