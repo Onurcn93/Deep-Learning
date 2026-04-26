@@ -45,8 +45,16 @@ def run_test(
 
     if data_params.dataset == "mnist":
         test_ds = datasets.MNIST(data_params.data_dir, train=False, download=True, transform=tf)
-    else:  # cifar10
+    elif data_params.dataset == "cifar10":
         test_ds = datasets.CIFAR10(data_params.data_dir, train=False, download=True, transform=tf)
+    elif data_params.dataset == "voc":
+        from datasets.voc import VOCClassification
+        test_ds = VOCClassification(data_params.voc_dir, split="val",
+                                    image_size=data_params.voc_image_size, download=True)
+    else:  # voc_person
+        from datasets.voc import VOCBinaryClassification
+        test_ds = VOCBinaryClassification(data_params.voc_dir, split="val",
+                                          image_size=data_params.voc_image_size, download=True)
 
     loader = DataLoader(test_ds, batch_size=training_params.batch_size,
                         shuffle=False, num_workers=data_params.num_workers)
@@ -81,7 +89,7 @@ def run_test(
         print(f"  Class {i}: {acc:.4f}  ({class_correct[i]}/{class_total[i]})")
 
     if training_params.plot:
-        plot_confusion_matrix(all_preds, all_labels, data_params.dataset, out_dir="results/resnet", title=config_title)
+        plot_confusion_matrix(all_preds, all_labels, data_params.dataset, out_dir=f"results/{model_params.model}", title=config_title)
 
     return results
 
