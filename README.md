@@ -21,6 +21,9 @@ This repository structure and implementation logic are based on the [Deep Learni
 | ResNet-18 pretrained | `--transfer_mode resizeFreeze` | CIFAR-10 | ImageNet weights, resize to 224, frozen backbone |
 | ResNet-18 pretrained | `--transfer_mode modifyFinetune` | CIFAR-10, VOC | ImageNet weights, full fine-tune; adapted stem for 32×32, original stem for 224×224 |
 | MobileNetV2 | `--model mobilenet` | CIFAR-10 | Inverted residuals, stride-1 stem for 32×32 |
+| DenseNet-169 | `--model densenet` | CIFAR-10, VOC | Dense connections; 1664-dim feature vector; adapted stem for 32×32 |
+| DenseNet-169 pretrained | `--model densenet --transfer_mode resizeFreeze` | CIFAR-10, VOC | ImageNet weights, frozen backbone, replaced classifier |
+| DenseNet-169 pretrained | `--model densenet --transfer_mode modifyFinetune` | CIFAR-10, VOC | ImageNet weights, full fine-tune; adapted stem for 32×32, original stem for 224×224 |
 
 ### Object Detection (`train_yolo.py` / `test_yolo.py`)
 
@@ -47,7 +50,7 @@ This repository structure and implementation logic are based on the [Deep Learni
 - **FLOPs counter** (`--count_flops`): MACs and parameter count via ptflops
 
 ### Transfer Learning & Knowledge Distillation
-- **Transfer learning**: ResNet-18 pretrained with frozen backbone (`resizeFreeze`) or full fine-tune (`modifyFinetune`)
+- **Transfer learning**: ResNet-18 and DenseNet-169 pretrained with frozen backbone (`resizeFreeze`) or full fine-tune (`modifyFinetune`); stem automatically adapted for 32×32 inputs
 - **Knowledge distillation**: Hinton KD (`--distill_mode hinton`) and teacher-probability label smoothing (`--distill_mode teacher_prob`); supports both custom-trained and pretrained-style teachers via `--teacher_transfer_mode`
 
 ### Object Detection (YOLOv8n)
@@ -137,7 +140,7 @@ python test_yolo.py --model_path yolo_best.pth
 |----------|---------|-------------|
 | `--mode` | `both` | `train`, `test`, or `both` |
 | `--dataset` | `mnist` | `mnist`, `cifar10`, or `voc` |
-| `--model` | `mlp` | `mlp`, `cnn`, `vgg`, `resnet`, `mobilenet` |
+| `--model` | `mlp` | `mlp`, `cnn`, `vgg`, `resnet`, `mobilenet`, `densenet` |
 | `--transfer_mode` | `none` | `none`, `resizeFreeze`, `modifyFinetune` |
 | `--device` | `auto` | `auto`, `cuda`, `mps`, or `cpu` |
 | `--seed` | `42` | Global random seed |
@@ -292,6 +295,20 @@ python main.py --mode both --dataset cifar10 --transfer_mode resizeFreeze \
 python main.py --mode both --dataset cifar10 --transfer_mode modifyFinetune \
                --epochs 20 --lr 1e-4 --batch_size 64 --scheduler cosine --plot
 
+# DenseNet-169 from scratch on CIFAR-10
+python main.py --mode both --dataset cifar10 --model densenet \
+               --epochs 50 --lr 1e-3 --scheduler cosine --weight_decay 1e-4 --plot
+
+# DenseNet-169 pretrained — full fine-tune on CIFAR-10 (adapted 3×3 stem)
+python main.py --mode both --dataset cifar10 --model densenet \
+               --transfer_mode modifyFinetune \
+               --epochs 20 --lr 1e-4 --batch_size 32 --scheduler cosine --plot
+
+# DenseNet-169 pretrained — fine-tune on PASCAL VOC (224×224, original stem)
+python main.py --mode both --dataset voc --model densenet \
+               --transfer_mode modifyFinetune \
+               --epochs 20 --lr 1e-4 --batch_size 16 --scheduler cosine --plot
+
 # Knowledge distillation — SimpleCNN student, custom ResNet teacher
 python main.py --dataset cifar10 --model cnn --distill \
                --teacher_path teachers/resnet_teacher.pth \
@@ -352,6 +369,7 @@ Deep-Learning/
 │   ├── VGG.py          # VGG-11/13/16/19 with BatchNorm
 │   ├── ResNet.py       # ResNet with configurable BasicBlocks
 │   ├── MobileNet.py    # MobileNetV2 with stride-1 stem for 32×32
+│   ├── DenseNet.py     # DenseNet-169 wrapper — pretrained/scratch, small_input stem adapt
 │   └── YOLO.py         # YOLOv8n — ResNet50 backbone + PANet + anchor-free heads
 ├── utils/
 │   ├── plot.py         # All figures: curves, confusion matrix, CIFAR-10-C, Grad-CAM, t-SNE
@@ -366,6 +384,7 @@ Deep-Learning/
 │   └── server.py       # Flask backend — loads YOLO + ResNet, draws boxes, GradCAM overlay
 ├── results/
 │   ├── resnet/         # Classification outputs: loss curves, confusion matrix, GradCAM, t-SNE
+│   ├── densenet/       # DenseNet-169 classification outputs
 │   └── yolo/           # Detection outputs: training loss curve
 ├── teachers/           # Gitignored — place teacher .pth weights here
 └── requirements.txt

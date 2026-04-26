@@ -13,6 +13,7 @@ from models.CNN import MNIST_CNN, SimpleCNN
 from models.VGG import VGG
 from models.ResNet import ResNet, BasicBlock
 from models.MobileNet import MobileNetV2
+from models.DenseNet import DenseNet169
 from train import run_training, run_augmix_training
 from test  import run_test, run_cifar10c_test, run_pgd_test, run_transfer_test
 from utils.logger import TrainLogger
@@ -54,15 +55,14 @@ def build_pretrained_model(
         Adapted ``nn.Module`` ready for training.
     """
     if model_params.model == "densenet":
-        model = tv_models.densenet169(weights=tv_models.DenseNet169_Weights.DEFAULT)
+        model = DenseNet169(
+            num_classes = num_classes,
+            pretrained  = True,
+            small_input = (image_size <= 64),
+        )
         if model_params.transfer_mode == "resizeFreeze":
             for param in model.parameters():
                 param.requires_grad = False
-            model.classifier = nn.Linear(model.classifier.in_features, num_classes)
-        elif model_params.transfer_mode == "modifyFinetune":
-            if image_size <= 64:
-                model.features.conv0 = nn.Conv2d(3, 64, kernel_size=3, stride=1, padding=1, bias=False)
-                model.features.pool0 = nn.Identity()  # type: ignore[assignment]
             model.classifier = nn.Linear(model.classifier.in_features, num_classes)
         return model
 
@@ -135,9 +135,7 @@ def build_model(
     if name == "densenet":
         if data_params.dataset == "mnist":
             raise ValueError("DenseNet-169 is designed for 3-channel images; use cifar10 with densenet.")
-        model = tv_models.densenet169(weights=None)
-        model.classifier = nn.Linear(model.classifier.in_features, nc)
-        return model
+        return DenseNet169(num_classes=nc, pretrained=False, small_input=(data_params.input_size <= 3*64*64))
 
     raise ValueError(f"Unknown model: {name}")
 
