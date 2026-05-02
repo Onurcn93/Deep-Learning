@@ -1,0 +1,49 @@
+weights/ — trained model checkpoints
+======================================
+
+Classification (main.py / CIFAR-10)
+-------------------------------------
+best_model.pth
+  Generic default save path. Contents vary by last run.
+  Flag: --save_path (default)
+
+best_model_finetune.pth
+  ResNet-18 modifyFinetune transfer learning on CIFAR-10.
+  Val acc: 94.37% | Epochs: 20 | bs=64, lr=1e-4, cosine
+  Flag: --save_path weights/best_model_finetune.pth
+  Run:
+    python main.py --mode both --dataset cifar10 --transfer_mode modifyFinetune \
+                   --epochs 20 --lr 1e-4 --batch_size 64 --scheduler cosine \
+                   --save_path weights/best_model_finetune.pth --plot
+
+best_model_augmix.pth
+  AugMix fine-tuned ResNet-18 on CIFAR-10.
+  Val acc: 92.2% clean | mCA: 85.0% | Epochs: 25 | bs=64, lr=1e-3, cosine+warmup5
+  Flag: --augmix_save_path (default)
+  Run:
+    python main.py --mode both --dataset cifar10 --transfer_mode modifyFinetune \
+                   --epochs 25 --lr 1e-3 --batch_size 64 --scheduler cosine \
+                   --warmup_epochs 5 --weight_decay 1e-4 --augmix --plot
+
+Binary Person Classification (main.py / VOC)
+---------------------------------------------
+best_model_person.pth
+  ResNet-18 (pretrained, modifyFinetune) binary classifier — person present vs not.
+  Val acc: 90.55% | Dataset: VOC 2012 (voc_person binary split)
+  Used by: ui/server.py --resnet_path (default)
+  Run:
+    python main.py --mode both --dataset voc_person --transfer_mode modifyFinetune \
+                   --epochs 20 --lr 1e-4 --batch_size 32 --scheduler cosine \
+                   --save_path weights/best_model_person.pth --device auto --plot
+
+Object Detection (train_yolo.py / VOC)
+----------------------------------------
+yolo_best.pth
+  YOLOv8n — ResNet50 ImageNet backbone + PANet + anchor-free heads (25.55M params).
+  mAP@0.5: 59.70% | person-only (1 class) | img_size=320 | bs=8 | Epochs: 50
+  Used by: ui/server.py --yolo_path (default), test_yolo.py --model_path
+  Run (6 GB GPU):
+    python train_yolo.py --epochs 50 --lr 1e-3 --batch_size 8 --img_size 320 \
+                         --weight_decay 5e-4 --eval_map_every 5 --device auto --plot
+  Eval:
+    python test_yolo.py --model_path weights/yolo_best.pth --img_size 320 --conf_thresh 0.25

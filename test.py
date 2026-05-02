@@ -10,7 +10,7 @@ from train import get_transforms, get_cifar10c_loader
 from parameters import DataParams, ModelParams, TrainingParams
 from utils.plot import (plot_confusion_matrix, plot_cifar10c_results,
                         plot_gradcam, plot_tsne, CIFAR10_CLASSES)
-from attack import pgd_attack
+from utils.attack import pgd_attack
 from utils.gradcam import GradCAM, get_target_layer
 
 

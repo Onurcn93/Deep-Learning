@@ -45,7 +45,7 @@ This repository structure and implementation logic are based on the [Deep Learni
 - **AugMix** (`--augmix`): fine-tune with AugMix augmentation + Jensen-Shannon consistency loss — `CE(clean) + λ·JSD(clean, aug1, aug2)`; saves to a separate checkpoint to preserve the vanilla model
 
 ### Evaluation & Logging
-- **Plotting** (`--plot`): training curves, confusion matrix, CIFAR-10-C bar chart and heatmap, Grad-CAM overlays, t-SNE scatter — saved to `results/resnet/` (classification) or `results/yolo/` (detection)
+- **Plotting** (`--plot`): training curves, confusion matrix, CIFAR-10-C bar chart and heatmap, Grad-CAM overlays, t-SNE scatter — saved to `results/<model>/` (classification) or `results/yolo/` (detection)
 - **Structured logger** (`--log`): formatted epoch table printed to terminal and saved to `logs/`
 - **FLOPs counter** (`--count_flops`): MACs and parameter count via ptflops
 
@@ -55,14 +55,15 @@ This repository structure and implementation logic are based on the [Deep Learni
 
 ### Object Detection (YOLOv8n)
 - **Architecture**: ResNet50 (ImageNet pretrained) backbone → channel adapter convs → PANet neck (top-down + bottom-up FPN) → anchor-free decoupled heads at P3/P4/P5 (strides 8/16/32); 25.55M params (backbone 23.51M + neck/head 2.04M)
-- **Loss**: BCE classification loss + CIoU regression loss (`torchvision.ops.complete_box_iou_loss`) with grid-cell-centre label assignment
+- **Loss**: BCE classification loss + CIoU regression loss (`torchvision.ops.complete_box_iou_loss`) with Task-Aligned Label Assignment (TAL) — top-k cells per GT scored by cls×IoU alignment metric
 - **Evaluation**: mAP@0.5 via 11-point interpolation, NMS via `torchvision.ops.batched_nms`
-- **Dataset**: PASCAL VOC 2012 — 20 classes, full bounding-box annotations, auto-downloaded
+- **Dataset**: PASCAL VOC 2012 — person-only by default (1 class, `--person_only True`); full 20-class mode via `--no-person_only`; auto-downloaded
 
 ### Inference UI (`ui/`)
 - **VocAssist dashboard**: dark-themed web app connecting YOLOv8n and ResNet for live single-image inference
 - **Flask backend** (`ui/server.py`): loads both models at startup, runs YOLO detection + ResNet GradCAM per request, returns server-rendered base64 images
-- **Bounding box view**: PIL-drawn teal boxes on the 640×640 YOLO input image
+- **Three tabs**: Inference (upload + view toggle), Model Health (accuracy/mAP stats cards), Config (hyperparameter reference)
+- **Bounding box view**: PIL-drawn teal boxes on the YOLO input image
 - **GradCAM view**: jet colormap heatmap blended onto the original image (matplotlib cm.jet)
 - **Frontend** (`ui/index.html` / `ui/style.css` / `ui/scripts.js`): vanilla JS, view toggle swaps `<img>` src, metric cards update with live confidence scores and detected classes
 
@@ -97,16 +98,14 @@ pip install torch torchvision torchaudio --index-url https://download.pytorch.or
 ```bash
 pip install flask
 
-# YOLO detection only (after training yolo_best.pth):
-python ui/server.py --yolo_path yolo_best.pth
+# Default — loads weights/yolo_best.pth + weights/best_model_person.pth automatically:
+python ui/server.py
 
 # YOLO + ResNet GradCAM — CIFAR-10 ResNet checkpoint (10 classes):
-python ui/server.py --yolo_path yolo_best.pth \
-                    --resnet_path best_model.pth --resnet_classes 10
+python ui/server.py --resnet_path weights/best_model.pth --resnet_classes 10
 
 # YOLO + ResNet GradCAM — VOC fine-tuned torchvision ResNet-18 (20 classes):
-python ui/server.py --yolo_path yolo_best.pth \
-                    --resnet_path best_model.pth \
+python ui/server.py --resnet_path weights/best_model.pth \
                     --resnet_arch pretrained --resnet_classes 20
 ```
 
@@ -125,7 +124,7 @@ python main.py --mode both --dataset mnist --model mlp
 python train_yolo.py --epochs 50 --lr 1e-3 --batch_size 16 --plot
 
 # Evaluate mAP@0.5
-python test_yolo.py --model_path yolo_best.pth
+python test_yolo.py --model_path weights/yolo_best.pth
 ```
 
 ---
@@ -139,13 +138,13 @@ python test_yolo.py --model_path yolo_best.pth
 | Argument | Default | Description |
 |----------|---------|-------------|
 | `--mode` | `both` | `train`, `test`, or `both` |
-| `--dataset` | `mnist` | `mnist`, `cifar10`, or `voc` |
+| `--dataset` | `mnist` | `mnist`, `cifar10`, `voc`, or `voc_person` |
 | `--model` | `mlp` | `mlp`, `cnn`, `vgg`, `resnet`, `mobilenet`, `densenet` |
 | `--transfer_mode` | `none` | `none`, `resizeFreeze`, `modifyFinetune` |
 | `--device` | `auto` | `auto`, `cuda`, `mps`, or `cpu` |
 | `--seed` | `42` | Global random seed |
-| `--save_path` | `best_model.pth` | Path for saving/loading best model weights |
-| `--plot` | `False` | Save all figures to `plots/` |
+| `--save_path` | `weights/best_model.pth` | Path for saving/loading best model weights |
+| `--plot` | `False` | Save all figures to `results/<model>/` |
 | `--log` / `--no-log` | `True` | Save training log to `logs/` |
 | `--count_flops` | `False` | Print MACs and parameter count via ptflops |
 
@@ -190,7 +189,7 @@ python test_yolo.py --model_path yolo_best.pth
 |----------|---------|-------------|
 | `--augmix` | `False` | Train with AugMix augmentation + JSD consistency loss |
 | `--jsd_lambda` | `12.0` | Weight on the JSD consistency term |
-| `--augmix_save_path` | `best_model_augmix.pth` | Separate checkpoint path for AugMix-trained model |
+| `--augmix_save_path` | `weights/best_model_augmix.pth` | Separate checkpoint path for AugMix-trained model |
 
 **CIFAR-10-C**
 
@@ -239,7 +238,7 @@ python test_yolo.py --model_path yolo_best.pth
 | `--batch_size` | `16` | Mini-batch size |
 | `--img_size` | `640` | Input image size (square) |
 | `--weight_decay` | `5e-4` | AdamW weight decay |
-| `--save_path` | `yolo_best.pth` | Checkpoint path (saved on best val loss) |
+| `--save_path` | `weights/yolo_best.pth` | Checkpoint path (saved on best mAP@0.5) |
 | `--voc_dir` | `./data/VOC` | Root directory for VOCdevkit |
 | `--device` | `auto` | `auto`, `cuda`, `mps`, or `cpu` |
 | `--seed` | `42` | Global random seed |
@@ -247,6 +246,8 @@ python test_yolo.py --model_path yolo_best.pth
 | `--freeze_backbone` / `--no-freeze_backbone` | `False` | Freeze backbone — train only neck and heads |
 | `--backbone_lr_mult` | `0.1` | Backbone LR multiplier when not frozen (backbone LR = lr × this) |
 | `--eval_map_every` | `1` | Compute mAP@0.5 on val every N epochs (0 = disabled) |
+| `--person_only` / `--no-person_only` | `True` | Train person-only detector (1 class); disable for all 20 VOC classes |
+| `--augment` / `--no-augment` | `True` | Apply detection augmentation (flip, jitter, scale_crop, mosaic) to train split |
 | `--log` / `--no-log` | `True` | Save training log to `logs/` |
 | `--plot` | `False` | Save loss curve to `results/yolo/yolo_loss.png` |
 
@@ -261,6 +262,7 @@ python test_yolo.py --model_path yolo_best.pth
 | `--map_iou` | `0.5` | IoU threshold for mAP computation |
 | `--voc_dir` | `./data/VOC` | Root directory for VOCdevkit |
 | `--batch_size` | `8` | Evaluation batch size |
+| `--person_only` / `--no-person_only` | `True` | Evaluate person-only checkpoint (1 class) |
 | `--device` | `auto` | `auto`, `cuda`, `mps`, or `cpu` |
 
 ---
@@ -273,7 +275,7 @@ python train_yolo.py --epochs 50 --lr 1e-3 --batch_size 4 --img_size 416 \
                      --weight_decay 5e-4 --eval_map_every 5 --device auto --plot
 
 # YOLOv8n — evaluate mAP@0.5 (img_size must match training)
-python test_yolo.py --model_path yolo_best.pth --img_size 416 --conf_thresh 0.25
+python test_yolo.py --model_path weights/yolo_best.pth --img_size 416 --conf_thresh 0.25
 
 # ResNet-18 fine-tune on PASCAL VOC 2012 (20-class classification)
 python main.py --dataset voc --transfer_mode modifyFinetune \
@@ -332,19 +334,19 @@ python main.py --dataset cifar10 --transfer_mode modifyFinetune \
 # CIFAR-10-C robustness evaluation
 # Download from https://zenodo.org/record/2535967, extract to data/CIFAR-10-C/
 python main.py --dataset cifar10 --transfer_mode modifyFinetune \
-               --mode test --save_path best_model_finetune.pth --test_cifar10c --plot
+               --mode test --save_path weights/best_model_finetune.pth --test_cifar10c --plot
 
 # PGD adversarial evaluation + Grad-CAM + t-SNE
 python main.py --dataset cifar10 --transfer_mode modifyFinetune \
-               --mode test --save_path best_model_finetune.pth \
-               --pgd --model_path best_model_finetune.pth \
+               --mode test --save_path weights/best_model_finetune.pth \
+               --pgd --model_path weights/best_model_finetune.pth \
                --pgd_n_samples 1000 --gradcam --tsne --plot
 
 # Adversarial transferability — teacher generates PGD, student is evaluated
-python main.py --dataset cifar10 --model cnn --mode test --save_path best_model.pth \
+python main.py --dataset cifar10 --model cnn --mode test --save_path weights/best_model.pth \
                --transfer --model_path teachers/resnet_augmix_teacher.pth \
                --teacher_transfer_mode modifyFinetune \
-               --student_path best_model.pth --pgd_n_samples 1000
+               --student_path weights/best_model.pth --pgd_n_samples 1000
 ```
 
 ---
@@ -356,7 +358,6 @@ Deep-Learning/
 ├── main.py             # Entry point: build model, train/test/eval dispatch
 ├── train.py            # Training loops: standard, KD, teacher_prob, AugMix
 ├── test.py             # Evaluation: clean test, CIFAR-10-C, PGD, transferability
-├── attack.py           # PGD adversarial attack — L∞ and L2 (Madry et al. 2018)
 ├── parameters.py       # DataParams, ModelParams, TrainingParams + argparse
 ├── pretrained.py       # Standalone pretrained ResNet-18 eval script
 ├── train_yolo.py       # YOLOv8n training pipeline on PASCAL VOC 2012
@@ -376,6 +377,7 @@ Deep-Learning/
 │   ├── logger.py       # Structured epoch table — terminal + logs/
 │   ├── gradcam.py      # Grad-CAM with forward/backward hooks (Selvaraju et al. 2017)
 │   ├── detection.py    # NMS, decode_predictions, compute_map (mAP@0.5)
+│   ├── attack.py       # PGD adversarial attack — L∞ and L2 (Madry et al. 2018)
 │   └── NN_Visualizer.py  # torchviz architecture graph for MLP
 ├── ui/
 │   ├── index.html      # VocAssist dashboard — dark theme, 60/40 grid, metric cards
@@ -386,6 +388,13 @@ Deep-Learning/
 │   ├── resnet/         # Classification outputs: loss curves, confusion matrix, GradCAM, t-SNE
 │   ├── densenet/       # DenseNet-169 classification outputs
 │   └── yolo/           # Detection outputs: training loss curve
+├── weights/            # Gitignored — trained model checkpoints
+│   ├── best_model.pth
+│   ├── best_model_finetune.pth
+│   ├── best_model_augmix.pth
+│   ├── best_model_person.pth
+│   ├── yolo_best.pth
+│   └── weights_summary.txt
 ├── teachers/           # Gitignored — place teacher .pth weights here
 └── requirements.txt
 ```

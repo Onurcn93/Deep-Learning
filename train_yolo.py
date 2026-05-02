@@ -9,7 +9,7 @@ Key flags:
     --batch_size          Batch size (default: 16)
     --img_size            Input image size (default: 640)
     --weight_decay        AdamW weight decay (default: 5e-4)
-    --save_path           Checkpoint path (default: yolo_best.pth)
+    --save_path           Checkpoint path (default: weights/yolo_best.pth)
     --voc_dir             Root directory for VOCdevkit (default: ./data/VOC)
     --device              auto | cuda | cpu
     --pretrained_backbone Use ImageNet-pretrained ResNet50 backbone (default: True)
@@ -516,7 +516,7 @@ def parse_args():
     p.add_argument("--batch_size",   type=int,   default=16)
     p.add_argument("--img_size",     type=int,   default=640)
     p.add_argument("--weight_decay", type=float, default=5e-4)
-    p.add_argument("--save_path",    type=str,   default="yolo_best.pth")
+    p.add_argument("--save_path",    type=str,   default="weights/yolo_best.pth")
     p.add_argument("--voc_dir",      type=str,   default="./data/VOC")
     p.add_argument("--device",       type=str,   default="auto")
     p.add_argument("--seed",         type=int,   default=42)

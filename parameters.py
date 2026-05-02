@@ -165,8 +165,8 @@ def get_params() -> Tuple[DataParams, ModelParams, TrainingParams]:
                         help="Distillation temperature T (softens teacher/student distributions)")
     parser.add_argument("--alpha",        type=float, default=0.7,
                         help="Weight for soft KD loss; (1-alpha) weights the hard CE loss")
-    parser.add_argument("--save_path",    type=str, default="best_model.pth",
-                        help="Path for saving/loading the best model weights (default: best_model.pth)")
+    parser.add_argument("--save_path",    type=str, default="weights/best_model.pth",
+                        help="Path for saving/loading the best model weights (default: weights/best_model.pth)")
     parser.add_argument("--count_flops",  action="store_true",
                         help="Print MACs and parameter count via ptflops before training")
     parser.add_argument("--cifar10c_dir", type=str, default="data/CIFAR-10-C",
@@ -177,7 +177,7 @@ def get_params() -> Tuple[DataParams, ModelParams, TrainingParams]:
                         help="Train with AugMix augmentation + Jensen-Shannon consistency loss")
     parser.add_argument("--jsd_lambda", type=float, default=12.0,
                         help="Weight on the JSD consistency term in AugMix loss (paper default: 12.0)")
-    parser.add_argument("--augmix_save_path", type=str, default="best_model_augmix.pth",
+    parser.add_argument("--augmix_save_path", type=str, default="weights/best_model_augmix.pth",
                         help="Checkpoint path for AugMix-trained model (kept separate from vanilla)")
 
     # PGD adversarial evaluation

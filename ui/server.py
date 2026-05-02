@@ -267,8 +267,8 @@ def load_models(args) -> None:
 
 def parse_args():
     p = argparse.ArgumentParser(description='VocAssist inference server')
-    p.add_argument('--yolo_path',      type=str, default='yolo_best.pth')
-    p.add_argument('--resnet_path',    type=str, default='best_model_person.pth')
+    p.add_argument('--yolo_path',      type=str, default='weights/yolo_best.pth')
+    p.add_argument('--resnet_path',    type=str, default='weights/best_model_person.pth')
     p.add_argument('--resnet_arch',    type=str, default='pretrained',
                    choices=['custom', 'pretrained'])
     p.add_argument('--resnet_classes', type=int, default=2)

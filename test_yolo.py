@@ -1,7 +1,7 @@
 """YOLO evaluation: mAP@0.5 on PASCAL VOC 2012 val set.
 
 Usage:
-    python test_yolo.py --model_path yolo_best.pth --img_size 640 --device auto
+    python test_yolo.py --model_path weights/yolo_best.pth --img_size 640 --device auto
 
 Key flags:
     --model_path   Path to trained YOLOv8 checkpoint (required)
