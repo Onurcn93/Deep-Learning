@@ -14,6 +14,7 @@ from models.VGG import VGG
 from models.ResNet import ResNet, BasicBlock
 from models.MobileNet import MobileNetV2
 from models.DenseNet import DenseNet169
+from models.EfficientNet import EfficientNetB3
 from train import run_training, run_augmix_training
 from test  import run_test, run_cifar10c_test, run_pgd_test, run_transfer_test
 from utils.logger import TrainLogger
@@ -64,6 +65,19 @@ def build_pretrained_model(
             for param in model.parameters():
                 param.requires_grad = False
             model.classifier = nn.Linear(model.classifier.in_features, num_classes)
+        return model
+
+    if model_params.model == "efficientnet":
+        model = EfficientNetB3(
+            num_classes = num_classes,
+            pretrained  = True,
+            small_input = (image_size <= 64),
+        )
+        if model_params.transfer_mode == "resizeFreeze":
+            for param in model.parameters():
+                param.requires_grad = False
+            in_feat = model.classifier[1].in_features
+            model.classifier[1] = nn.Linear(in_feat, num_classes)
         return model
 
     # Default: ResNet-18
@@ -137,6 +151,11 @@ def build_model(
             raise ValueError("DenseNet-169 is designed for 3-channel images; use cifar10 with densenet.")
         return DenseNet169(num_classes=nc, pretrained=False, small_input=(data_params.input_size <= 3*64*64))
 
+    if name == "efficientnet":
+        if data_params.dataset == "mnist":
+            raise ValueError("EfficientNet-B3 is designed for 3-channel images; use cifar10 with efficientnet.")
+        return EfficientNetB3(num_classes=nc, pretrained=False, small_input=(data_params.input_size <= 3*64*64))
+
     raise ValueError(f"Unknown model: {name}")
 
 
@@ -149,7 +168,7 @@ def build_config_title(
     parts = []
 
     if model_params.transfer_mode != "none":
-        backbone = "DenseNet169" if model_params.model == "densenet" else "ResNet18"
+        backbone = "DenseNet169" if model_params.model == "densenet" else "EfficientNetB3" if model_params.model == "efficientnet" else "ResNet18"
         parts.append(f"{backbone}-pretrained | {model_params.transfer_mode}")
     else:
         name = model_params.model
@@ -168,6 +187,8 @@ def build_config_title(
             parts.append("MobileNetV2")
         elif name == "densenet":
             parts.append("DenseNet-169")
+        elif name == "efficientnet":
+            parts.append("EfficientNet-B3")
     parts.append(data_params.dataset)
     parts.append(f"lr={training_params.learning_rate}")
     parts.append(f"bs={training_params.batch_size}")

@@ -24,6 +24,9 @@ This repository structure and implementation logic are based on the [Deep Learni
 | DenseNet-169 | `--model densenet` | CIFAR-10, VOC | Dense connections; 1664-dim feature vector; adapted stem for 32×32 |
 | DenseNet-169 pretrained | `--model densenet --transfer_mode resizeFreeze` | CIFAR-10, VOC | ImageNet weights, frozen backbone, replaced classifier |
 | DenseNet-169 pretrained | `--model densenet --transfer_mode modifyFinetune` | CIFAR-10, VOC | ImageNet weights, full fine-tune; adapted stem for 32×32, original stem for 224×224 |
+| EfficientNet-B3 | `--model efficientnet` | CIFAR-10, VOC | Compound-scaled MBConv blocks; 1536-dim feature vector; adapted stride-1 stem for 32×32 |
+| EfficientNet-B3 pretrained | `--model efficientnet --transfer_mode resizeFreeze` | CIFAR-10, VOC | ImageNet weights, frozen backbone, replaced classifier |
+| EfficientNet-B3 pretrained | `--model efficientnet --transfer_mode modifyFinetune` | CIFAR-10, VOC | ImageNet weights, full fine-tune; adapted stride-1 stem for 32×32, original stem for 224×224 |
 
 ### Object Detection (`train_yolo.py` / `test_yolo.py`)
 
@@ -50,7 +53,7 @@ This repository structure and implementation logic are based on the [Deep Learni
 - **FLOPs counter** (`--count_flops`): MACs and parameter count via ptflops
 
 ### Transfer Learning & Knowledge Distillation
-- **Transfer learning**: ResNet-18 and DenseNet-169 pretrained with frozen backbone (`resizeFreeze`) or full fine-tune (`modifyFinetune`); stem automatically adapted for 32×32 inputs
+- **Transfer learning**: ResNet-18, DenseNet-169, and EfficientNet-B3 pretrained with frozen backbone (`resizeFreeze`) or full fine-tune (`modifyFinetune`); stem automatically adapted for 32×32 inputs
 - **Knowledge distillation**: Hinton KD (`--distill_mode hinton`) and teacher-probability label smoothing (`--distill_mode teacher_prob`); supports both custom-trained and pretrained-style teachers via `--teacher_transfer_mode`
 
 ### Object Detection (YOLOv8n)
@@ -96,8 +99,6 @@ pip install torch torchvision torchaudio --index-url https://download.pytorch.or
 ### Inference UI (`ui/server.py`)
 
 ```bash
-pip install flask
-
 # Default — loads weights/yolo_best.pth + weights/best_model_person.pth automatically:
 python ui/server.py
 
@@ -139,7 +140,7 @@ python test_yolo.py --model_path weights/yolo_best.pth
 |----------|---------|-------------|
 | `--mode` | `both` | `train`, `test`, or `both` |
 | `--dataset` | `mnist` | `mnist`, `cifar10`, `voc`, or `voc_person` |
-| `--model` | `mlp` | `mlp`, `cnn`, `vgg`, `resnet`, `mobilenet`, `densenet` |
+| `--model` | `mlp` | `mlp`, `cnn`, `vgg`, `resnet`, `mobilenet`, `densenet`, `efficientnet` |
 | `--transfer_mode` | `none` | `none`, `resizeFreeze`, `modifyFinetune` |
 | `--device` | `auto` | `auto`, `cuda`, `mps`, or `cpu` |
 | `--seed` | `42` | Global random seed |
@@ -297,6 +298,21 @@ python main.py --mode both --dataset cifar10 --transfer_mode resizeFreeze \
 python main.py --mode both --dataset cifar10 --transfer_mode modifyFinetune \
                --epochs 20 --lr 1e-4 --batch_size 64 --scheduler cosine --plot
 
+# EfficientNet-B3 from scratch on CIFAR-10
+python main.py --mode both --dataset cifar10 --model efficientnet \
+               --epochs 25 --lr 1e-3 --scheduler cosine --warmup_epochs 5 \
+               --weight_decay 1e-4 --batch_size 64 --plot
+
+# EfficientNet-B3 pretrained — full fine-tune on CIFAR-10 (adapted stride-1 stem)
+python main.py --mode both --dataset cifar10 --model efficientnet \
+               --transfer_mode modifyFinetune \
+               --epochs 20 --lr 1e-4 --batch_size 32 --scheduler cosine --plot
+
+# EfficientNet-B3 pretrained — fine-tune on PASCAL VOC (224×224, original stem)
+python main.py --mode both --dataset voc_person --model efficientnet \
+               --transfer_mode modifyFinetune \
+               --epochs 20 --lr 1e-4 --batch_size 32 --scheduler cosine --device auto --plot
+
 # DenseNet-169 from scratch on CIFAR-10
 python main.py --mode both --dataset cifar10 --model densenet \
                --epochs 50 --lr 1e-3 --scheduler cosine --weight_decay 1e-4 --plot
@@ -371,6 +387,7 @@ Deep-Learning/
 │   ├── ResNet.py       # ResNet with configurable BasicBlocks
 │   ├── MobileNet.py    # MobileNetV2 with stride-1 stem for 32×32
 │   ├── DenseNet.py     # DenseNet-169 wrapper — pretrained/scratch, small_input stem adapt
+│   ├── EfficientNet.py # EfficientNet-B3 wrapper — pretrained/scratch, small_input stem adapt
 │   └── YOLO.py         # YOLOv8n — ResNet50 backbone + PANet + anchor-free heads
 ├── utils/
 │   ├── plot.py         # All figures: curves, confusion matrix, CIFAR-10-C, Grad-CAM, t-SNE
@@ -387,6 +404,7 @@ Deep-Learning/
 ├── results/
 │   ├── resnet/         # Classification outputs: loss curves, confusion matrix, GradCAM, t-SNE
 │   ├── densenet/       # DenseNet-169 classification outputs
+│   ├── efficientnet/   # EfficientNet-B3 classification outputs
 │   └── yolo/           # Detection outputs: training loss curve
 ├── weights/            # Gitignored — trained model checkpoints
 │   ├── best_model.pth
