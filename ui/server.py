@@ -49,7 +49,7 @@ IMAGENET_MEAN = [0.485, 0.456, 0.406]
 IMAGENET_STD  = [0.229, 0.224, 0.225]
 
 YOLO_TRANSFORM = T.Compose([
-    T.Resize((640, 640)),
+    T.Resize((320, 320)),
     T.ToTensor(),
     T.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
 ])
@@ -83,7 +83,7 @@ def inference():
         'top_class':          '—',
         'top_confidence':     0.0,
         'yolo_confidence':    0.0,
-        'resnet_confidence':  0.0,
+        'resnet_confidence':  None,
         'ensemble_confidence':0.0,
     }
 
@@ -92,7 +92,7 @@ def inference():
         img_t = YOLO_TRANSFORM(pil_orig).unsqueeze(0).to(DEVICE)
         with torch.no_grad():
             outputs = YOLO_MODEL(img_t)
-            raw     = YOLO_MODEL.decode(outputs, img_size=640, conf_thresh=0.25)
+            raw     = YOLO_MODEL.decode(outputs, img_size=320, conf_thresh=0.25)
         preds = decode_predictions(raw.cpu(), conf_thresh=0.25, iou_thresh=0.45)
         det   = preds[0]
 
@@ -102,14 +102,14 @@ def inference():
             label = int(det['labels'][i])
             x1, y1, x2, y2 = det['boxes'][i].tolist()
             boxes_out.append({
-                'x1': round(x1 / 640, 4), 'y1': round(y1 / 640, 4),
-                'x2': round(x2 / 640, 4), 'y2': round(y2 / 640, 4),
+                'x1': round(x1 / 320, 4), 'y1': round(y1 / 320, 4),
+                'x2': round(x2 / 320, 4), 'y2': round(y2 / 320, 4),
                 'class_name': YOLO_CLASS_NAMES[label] if label < len(YOLO_CLASS_NAMES) else str(label),
                 'confidence': round(score, 3),
             })
 
         result['boxes']         = boxes_out
-        result['bbox_image_b64'] = _draw_bbox_image(img_t.squeeze(0).cpu(), boxes_out)
+        result['bbox_image_b64'] = _draw_bbox_image(pil_orig, boxes_out)
 
         if boxes_out:
             best = max(boxes_out, key=lambda b: b['confidence'])
@@ -127,7 +127,9 @@ def inference():
         with torch.no_grad():
             logits = RESNET_MODEL(img_t)
         probs = torch.softmax(logits, dim=1)[0]
-        conf  = float(probs[pred_cls])
+        # For binary classifier always report person-class probability (class 1)
+        person_idx = 1 if len(RESNET_CLASSES) == 2 else pred_cls
+        conf = float(probs[person_idx])
 
         result['resnet_confidence'] = round(conf, 3)
         if result['top_class'] == '—':
@@ -153,30 +155,30 @@ def _denorm_tensor_to_pil(img_tensor: torch.Tensor) -> Image.Image:
     return Image.fromarray((img.permute(1, 2, 0).numpy() * 255).astype(np.uint8))
 
 
-def _draw_bbox_image(img_tensor: torch.Tensor, boxes: list[dict]) -> str:
-    """Draw teal bounding boxes on the 640×640 YOLO input image."""
-    pil = _denorm_tensor_to_pil(img_tensor)
+def _draw_bbox_image(pil_orig: Image.Image, boxes: list[dict]) -> str:
+    """Draw teal bounding boxes on the original image using normalised [0,1] coords."""
+    pil = pil_orig.copy()
+    w, h = pil.size
 
     if boxes:
-        draw  = ImageDraw.Draw(pil)
-        teal  = (29, 233, 182)
-        dark  = (13, 27, 42)
-        scale = 640
+        draw = ImageDraw.Draw(pil)
+        teal = (29, 233, 182)
+        dark = (13, 27, 42)
 
         for box in boxes:
-            x1 = box['x1'] * scale
-            y1 = box['y1'] * scale
-            x2 = box['x2'] * scale
-            y2 = box['y2'] * scale
+            x1 = box['x1'] * w
+            y1 = box['y1'] * h
+            x2 = box['x2'] * w
+            y2 = box['y2'] * h
 
-            draw.rectangle([x1, y1, x2, y2], outline=teal, width=2)
+            draw.rectangle([x1, y1, x2, y2], outline=teal, width=3)
 
             label = f"{box['class_name']}  {box['confidence']:.2f}"
-            lw    = len(label) * 6 + 6
-            lh    = 14
+            lw    = len(label) * 7 + 6
+            lh    = 16
             ly    = max(y1 - lh, 0)
             draw.rectangle([x1, ly, x1 + lw, ly + lh], fill=teal)
-            draw.text((x1 + 3, ly + 1), label, fill=dark)
+            draw.text((x1 + 3, ly + 2), label, fill=dark)
 
     return _pil_to_b64(pil)
 

@@ -18,11 +18,10 @@ const viewRadios       = document.querySelectorAll('input[name="view"]');
 const valClass        = document.getElementById('val-class');
 const valClassSub     = document.getElementById('val-class-sub');
 const barClass        = document.getElementById('bar-class');
-const valConfidence   = document.getElementById('val-confidence');
-const valConfDetail   = document.getElementById('val-conf-detail');
-const barConfidence   = document.getElementById('bar-confidence');
-const valIou          = document.getElementById('val-iou');
-const barIou          = document.getElementById('bar-iou');
+const valYoloConf     = document.getElementById('val-yolo-conf');
+const barYoloConf     = document.getElementById('bar-yolo-conf');
+const valResnetConf   = document.getElementById('val-resnet-conf');
+const barResnetConf   = document.getElementById('bar-resnet-conf');
 const classChips      = document.getElementById('class-chips');
 const statusLed       = document.getElementById('status-led');
 const statusText      = document.getElementById('status-text');
@@ -123,31 +122,22 @@ function handleInferenceResult(data) {
 
 function updateMetrics(data) {
   const topClass = data.top_class || '—';
-  const ensConf  = data.ensemble_confidence || 0;
-  const yConf    = data.yolo_confidence     || 0;
-  const rConf    = data.resnet_confidence   || 0;
-  const boxes    = data.boxes               || [];
+  const yConf    = data.yolo_confidence   || 0;
+  const rConf    = data.resnet_confidence;        // null = model not loaded, 0.0 = ran but low
+  const boxes    = data.boxes             || [];
 
   // Top class card
   valClass.textContent    = topClass;
   valClassSub.textContent = `${boxes.length} object${boxes.length !== 1 ? 's' : ''} detected`;
-  barClass.style.width    = `${ensConf * 100}%`;
+  barClass.style.width    = `${Math.max(yConf, rConf ?? 0) * 100}%`;
 
-  // Confidence card
-  valConfidence.textContent   = ensConf.toFixed(2);
-  barConfidence.style.width   = `${ensConf * 100}%`;
-  const yLabel = yConf > 0 ? `YOLO: ${yConf.toFixed(2)}` : 'YOLO: —';
-  const rLabel = rConf > 0 ? `ResNet: ${rConf.toFixed(2)}` : 'ResNet: —';
-  valConfDetail.textContent   = `${yLabel} / ${rLabel}`;
+  // YOLO confidence card
+  valYoloConf.textContent   = yConf > 0 ? yConf.toFixed(2) : '—';
+  barYoloConf.style.width   = `${yConf * 100}%`;
 
-  // IoU — use highest-confidence box score as proxy when mAP not available
-  const iouPct = boxes.length > 0
-    ? Math.round(Math.max(...boxes.map(b => b.confidence)) * 100)
-    : null;
-  if (iouPct !== null) {
-    valIou.textContent = `${iouPct}%`;
-    barIou.style.width = `${iouPct}%`;
-  }
+  // ResNet probability card
+  valResnetConf.textContent = rConf !== null ? rConf.toFixed(2) : '—';
+  barResnetConf.style.width = rConf !== null ? `${rConf * 100}%` : '0%';
 
   // Detection count tag
   detectionCount.textContent = boxes.length > 0
@@ -157,17 +147,17 @@ function updateMetrics(data) {
   // Class chips — top 6 unique detected classes
   const seen   = new Set();
   const unique = boxes.filter(b => !seen.has(b.class_name) && seen.add(b.class_name));
-  if (unique.length > 0) {
-    classChips.innerHTML = unique.slice(0, 6).map((b, i) =>
-      `<span class="chip ${i === 0 ? 'active' : ''}">${b.class_name}</span>`
-    ).join('');
-  }
+  classChips.innerHTML = unique.length > 0
+    ? unique.slice(0, 6).map((b, i) =>
+        `<span class="chip ${i === 0 ? 'active' : ''}">${b.class_name}</span>`
+      ).join('')
+    : '<span class="chip muted">—</span>';
 
   // Status banner
   const hasYolo   = yConf > 0;
-  const hasResnet = rConf > 0;
+  const hasResnet = rConf !== null;
   if (hasYolo && hasResnet) {
-    statusText.textContent = 'ENSEMBLE INFERENCE COMPLETE';
+    statusText.textContent = 'DUAL-MODEL INFERENCE COMPLETE';
   } else if (hasYolo) {
     statusText.textContent = 'YOLO-LED DETECTION ACTIVE';
   } else if (hasResnet) {

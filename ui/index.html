@@ -20,7 +20,7 @@
       </div>
       <nav class="nav-tabs" id="nav-tabs">
         <button class="nav-tab active" id="tab-inference" data-section="section-inference">Inference</button>
-        <button class="nav-tab" id="tab-model-health" data-section="section-model-health">Model Health</button>
+        <button class="nav-tab" id="tab-model-health" data-section="section-model-health">Model Status</button>
         <button class="nav-tab" id="tab-config" data-section="section-config">Config</button>
       </nav>
     </div>
@@ -119,30 +119,27 @@
           <div class="metric-card">
             <div class="metric-header">
               <span class="metric-dot teal"></span>
-              <span class="metric-title">Ensemble Confidence</span>
+              <span class="metric-title">YOLO Confidence</span>
             </div>
-            <div class="metric-value text-teal" id="val-confidence">0.89</div>
-            <div class="metric-subtitle" id="val-conf-detail">YOLO: 0.92 / ResNet: 0.85</div>
-            <div class="metric-bar"><div class="metric-bar-fill teal" id="bar-confidence" style="width:89%"></div></div>
+            <div class="metric-value text-teal" id="val-yolo-conf">—</div>
+            <div class="metric-subtitle">Person detection score</div>
+            <div class="metric-bar"><div class="metric-bar-fill teal" id="bar-yolo-conf" style="width:0%"></div></div>
           </div>
 
           <div class="metric-card">
             <div class="metric-header">
               <span class="metric-dot amber"></span>
-              <span class="metric-title">IoU Score</span>
+              <span class="metric-title">ResNet-18 Probability</span>
             </div>
-            <div class="metric-value text-teal" id="val-iou">74.2%</div>
-            <div class="metric-subtitle">Intersection over Union</div>
-            <div class="metric-bar"><div class="metric-bar-fill amber" id="bar-iou" style="width:74.2%"></div></div>
+            <div class="metric-value text-teal" id="val-resnet-conf">—</div>
+            <div class="metric-subtitle">P(person present)</div>
+            <div class="metric-bar"><div class="metric-bar-fill amber" id="bar-resnet-conf" style="width:0%"></div></div>
           </div>
 
           <div class="metric-card secondary">
             <div class="metric-title">Classes Detected</div>
             <div class="class-chips" id="class-chips">
-              <span class="chip active">Bicycle</span>
-              <span class="chip">Person</span>
-              <span class="chip muted">Car</span>
-              <span class="chip muted">Dog</span>
+              <span class="chip muted">—</span>
             </div>
           </div>
 
@@ -173,7 +170,7 @@
           <div class="stat-row"><span class="stat-label">Total params</span>           <span class="stat-value">25.55 M</span></div>
           <div class="stat-row"><span class="stat-label">Backbone params</span>        <span class="stat-value">23.51 M</span></div>
           <div class="stat-row"><span class="stat-label">Neck + head params</span>     <span class="stat-value">2.04 M</span></div>
-          <div class="stat-row"><span class="stat-label">Best checkpoint epoch</span>  <span class="stat-value">~epoch 20 / 30</span></div>
+          <div class="stat-row"><span class="stat-label">Best checkpoint epoch</span>  <span class="stat-value">~epoch 20 / 50</span></div>
           <div class="stat-row"><span class="stat-label">Checkpoint</span>             <span class="stat-value mono">yolo_best.pth</span></div>
         </div>
 
@@ -189,7 +186,6 @@
           <div class="stat-row"><span class="stat-label">Dataset</span>                <span class="stat-value">PASCAL VOC 2012 val</span></div>
           <div class="stat-row"><span class="stat-label">Total params</span>           <span class="stat-value">11.17 M</span></div>
           <div class="stat-row"><span class="stat-label">MACs</span>                   <span class="stat-value">557.22 MMac</span></div>
-          <div class="stat-row"><span class="stat-label">Training time</span>          <span class="stat-value">19m 32s</span></div>
           <div class="stat-row"><span class="stat-label">Epochs trained</span>         <span class="stat-value">20</span></div>
           <div class="stat-row"><span class="stat-label">Checkpoint</span>             <span class="stat-value mono">best_model_person.pth</span></div>
         </div>
@@ -213,7 +209,7 @@
           <div class="stat-row"><span class="stat-label">Classes</span>                <span class="stat-value">1 (person only)</span></div>
           <div class="stat-row"><span class="stat-label">Image size</span>             <span class="stat-value highlight">320 × 320</span></div>
           <div class="stat-row"><span class="stat-label">Batch size</span>             <span class="stat-value">8</span></div>
-          <div class="stat-row"><span class="stat-label">Epochs</span>                 <span class="stat-value">30</span></div>
+          <div class="stat-row"><span class="stat-label">Epochs</span>                 <span class="stat-value">50</span></div>
           <div class="stat-row"><span class="stat-label">Learning rate</span>          <span class="stat-value">1e-3 (cosine decay)</span></div>
           <div class="stat-row"><span class="stat-label">Backbone LR mult</span>       <span class="stat-value">0.1×</span></div>
           <div class="stat-row"><span class="stat-label">Weight decay</span>           <span class="stat-value">5e-4</span></div>
@@ -235,7 +231,7 @@
           <div class="stat-row"><span class="stat-label">Backbone</span>               <span class="stat-value">ImageNet pretrained, full fine-tune</span></div>
           <div class="stat-row"><span class="stat-label">Classes</span>                <span class="stat-value">2 (person / no person)</span></div>
           <div class="stat-row"><span class="stat-label">Image size</span>             <span class="stat-value highlight">224 × 224</span></div>
-          <div class="stat-row"><span class="stat-label">Batch size</span>             <span class="stat-value">64</span></div>
+          <div class="stat-row"><span class="stat-label">Batch size</span>             <span class="stat-value">32</span></div>
           <div class="stat-row"><span class="stat-label">Epochs</span>                 <span class="stat-value">20</span></div>
           <div class="stat-row"><span class="stat-label">Learning rate</span>          <span class="stat-value">1e-4 (cosine decay)</span></div>
           <div class="stat-row"><span class="stat-label">Weight decay</span>           <span class="stat-value">1e-4</span></div>
