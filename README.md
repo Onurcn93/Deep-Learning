@@ -62,13 +62,70 @@ This repository structure and implementation logic are based on the [Deep Learni
 - **Evaluation**: mAP@0.5 via 11-point interpolation, NMS via `torchvision.ops.batched_nms`
 - **Dataset**: PASCAL VOC 2012 — person-only by default (1 class, `--person_only True`); full 20-class mode via `--no-person_only`; auto-downloaded
 
-### Inference UI (`ui/`)
-- **VocAssist dashboard**: dark-themed web app connecting YOLOv8n and ResNet for live single-image inference
-- **Flask backend** (`ui/server.py`): loads both models at startup, runs YOLO detection + ResNet GradCAM per request, returns server-rendered base64 images
-- **Three tabs**: Inference (upload + view toggle), Model Health (accuracy/mAP stats cards), Config (hyperparameter reference)
-- **Bounding box view**: PIL-drawn teal boxes on the YOLO input image
-- **GradCAM view**: jet colormap heatmap blended onto the original image (matplotlib cm.jet)
-- **Frontend** (`ui/index.html` / `ui/style.css` / `ui/scripts.js`): vanilla JS, view toggle swaps `<img>` src, metric cards update with live confidence scores and detected classes
+### Inference UI — VocAssist (`ui/`)
+
+VocAssist is a dark-themed web dashboard that runs YOLOv8n and ResNet-18 together on a single uploaded image and visualises the results in real time. Start with no arguments and open the browser:
+
+```bash
+python ui/server.py   # → http://localhost:5000
+```
+
+#### Inference pipeline
+
+```
+Upload image (JPEG/PNG)
+        │
+        ▼
+  /api/inference  (POST, multipart)
+        │
+        ├─► YOLO branch
+        │     resize 320×320 → ImageNet norm
+        │     YOLOv8n forward → decode → NMS (conf 0.25, IoU 0.45)
+        │     boxes normalised to [0,1] rel. to 320px space
+        │     PIL draws teal boxes on full-res original → PNG → base64
+        │
+        ├─► ResNet branch
+        │     resize 224×224 → ImageNet norm
+        │     GradCAM: forward + backward hooks → jet heatmap
+        │     blended 55% original / 45% heatmap → PNG → base64
+        │     confidence = softmax(logits)[person_class=1]
+        │     (always reports person-class probability, not argmax class)
+        │
+        └─► JSON response → browser
+```
+
+#### API response shape
+
+```json
+{
+  "success": true,
+  "boxes": [{ "x1": 0.12, "y1": 0.08, "x2": 0.54, "y2": 0.91,
+              "class_name": "person", "confidence": 0.87 }],
+  "bbox_image_b64":    "data:image/png;base64,...",
+  "gradcam_b64":       "data:image/png;base64,...",
+  "top_class":         "person",
+  "yolo_confidence":   0.87,
+  "resnet_confidence": 0.91
+}
+```
+`resnet_confidence` is `null` when the ResNet model is not loaded, or a float ≥ 0.0 when it ran.
+
+#### Frontend data flow
+
+1. File selected → `FileReader` decodes locally → original image shown immediately
+2. `FormData` POSTed to `/api/inference`
+3. `bbox_image_b64` and `gradcam_b64` stored in JS state; current radio toggle determines which is shown
+4. View toggle (GradCAM / Bounding Box) swaps `<img>` src — no re-fetch
+5. Metric cards updated: YOLO confidence, ResNet-18 P(person), top class, detected class chips
+6. Status banner: **DUAL-MODEL INFERENCE COMPLETE** when both models run
+
+#### Three tabs
+
+| Tab | Contents |
+|-----|----------|
+| **Inference** | Image viewer with GradCAM/Bbox toggle; YOLO confidence, ResNet-18 P(person), top class, detected class chips |
+| **Model Status** | Per-model stat cards: mAP@0.5, val accuracy, param count, MACs, checkpoint name |
+| **Config** | Training hyperparameter reference for both YOLOv8n and ResNet-18 |
 
 ### Robustness & Adversarial
 - **CIFAR-10-C** (`--test_cifar10c`): evaluates across all 19 corruption types × 5 severity levels; saves bar chart and heatmap
@@ -121,11 +178,12 @@ python main.py --mode both --dataset mnist --model mlp
 ### Object Detection (`train_yolo.py` / `test_yolo.py`)
 
 ```bash
-# Train YOLOv8n on PASCAL VOC 2012
-python train_yolo.py --epochs 50 --lr 1e-3 --batch_size 16 --plot
+# Train YOLOv8n on PASCAL VOC 2012 (recommended config for 6 GB GPU)
+python train_yolo.py --epochs 50 --lr 1e-3 --batch_size 8 --img_size 320 \
+                     --weight_decay 5e-4 --device auto --plot
 
-# Evaluate mAP@0.5
-python test_yolo.py --model_path weights/yolo_best.pth
+# Evaluate mAP@0.5 (img_size must match training)
+python test_yolo.py --model_path weights/yolo_best.pth --img_size 320
 ```
 
 ---
@@ -236,8 +294,8 @@ python test_yolo.py --model_path weights/yolo_best.pth
 |----------|---------|-------------|
 | `--epochs` | `50` | Training epochs |
 | `--lr` | `1e-3` | Initial learning rate |
-| `--batch_size` | `16` | Mini-batch size |
-| `--img_size` | `640` | Input image size (square) |
+| `--batch_size` | `16` | Mini-batch size (use 8 with `--img_size 320` for 6 GB GPU) |
+| `--img_size` | `640` | Input image size (square); recommended 320 for 6 GB GPU |
 | `--weight_decay` | `5e-4` | AdamW weight decay |
 | `--save_path` | `weights/yolo_best.pth` | Checkpoint path (saved on best mAP@0.5) |
 | `--voc_dir` | `./data/VOC` | Root directory for VOCdevkit |
@@ -257,7 +315,7 @@ python test_yolo.py --model_path weights/yolo_best.pth
 | Argument | Default | Description |
 |----------|---------|-------------|
 | `--model_path` | *(required)* | Path to trained YOLOv8 checkpoint |
-| `--img_size` | `640` | Input image size (must match training) |
+| `--img_size` | `640` | Input image size — **must match training** (provided checkpoint: 320) |
 | `--conf_thresh` | `0.25` | Confidence threshold for predictions |
 | `--iou_thresh` | `0.45` | NMS IoU threshold |
 | `--map_iou` | `0.5` | IoU threshold for mAP computation |
@@ -266,19 +324,37 @@ python test_yolo.py --model_path weights/yolo_best.pth
 | `--person_only` / `--no-person_only` | `True` | Evaluate person-only checkpoint (1 class) |
 | `--device` | `auto` | `auto`, `cuda`, `mps`, or `cpu` |
 
+### Inference Server (`ui/server.py`)
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--yolo_path` | `weights/yolo_best.pth` | Path to YOLOv8 checkpoint |
+| `--resnet_path` | `weights/best_model_person.pth` | Path to ResNet checkpoint |
+| `--resnet_arch` | `pretrained` | `pretrained` (torchvision ResNet-18) or `custom` (project ResNet class) |
+| `--resnet_classes` | `2` | Number of output classes for the ResNet head |
+| `--person_only` / `--no-person_only` | `True` | Whether YOLO was trained as person-only (1 class) |
+| `--device` | `auto` | `auto`, `cuda`, `mps`, or `cpu` |
+| `--port` | `5000` | HTTP port to serve on |
+| `--debug` | `False` | Enable Flask debug mode |
+
 ---
 
 ## Examples
 
 ```bash
-# YOLOv8n — train on PASCAL VOC 2012 (ResNet50 backbone, 6 GB GPU)
-python train_yolo.py --epochs 50 --lr 1e-3 --batch_size 4 --img_size 416 \
+# YOLOv8n — train on PASCAL VOC 2012 (recommended config for 6 GB GPU)
+python train_yolo.py --epochs 50 --lr 1e-3 --batch_size 8 --img_size 320 \
                      --weight_decay 5e-4 --eval_map_every 5 --device auto --plot
 
 # YOLOv8n — evaluate mAP@0.5 (img_size must match training)
-python test_yolo.py --model_path weights/yolo_best.pth --img_size 416 --conf_thresh 0.25
+python test_yolo.py --model_path weights/yolo_best.pth --img_size 320 --conf_thresh 0.25
 
-# ResNet-18 fine-tune on PASCAL VOC 2012 (20-class classification)
+# ResNet-18 fine-tune on PASCAL VOC 2012 — binary person classifier (voc_person split)
+python main.py --mode both --dataset voc_person --transfer_mode modifyFinetune \
+               --epochs 20 --lr 1e-4 --batch_size 32 --scheduler cosine \
+               --save_path weights/best_model_person.pth --device auto --plot
+
+# ResNet-18 fine-tune on PASCAL VOC 2012 — 20-class classification
 python main.py --dataset voc --transfer_mode modifyFinetune \
                --epochs 20 --lr 1e-4 --batch_size 32 \
                --scheduler cosine --device auto --plot
