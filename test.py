@@ -110,6 +110,7 @@ def run_cifar10c_test(
     device:          torch.device,
     clean_acc:       float = 0.0,
     config_title:    str   = "",
+    model_name:      str   = "resnet",
 ) -> Dict[str, float]:
     """Evaluate a trained model on all CIFAR-10-C corruptions across all severities.
 
@@ -164,7 +165,7 @@ def run_cifar10c_test(
     results["mCA"] = mca
 
     if training_params.plot:
-        plot_cifar10c_results(corruption_accs, clean_acc, out_dir="results/resnet", title=config_title)
+        plot_cifar10c_results(corruption_accs, clean_acc, out_dir=f"results/{model_name}", title=config_title)
 
     return results
 
@@ -360,7 +361,7 @@ def run_pgd_test(
                     clean_cams,    adv_cams,
                     labels_gc, clean_preds_gc, adv_preds_gc,
                     class_names=CIFAR10_CLASSES,
-                    out_dir="results/resnet",
+                    out_dir=f"results/{model_params.model}",
                     title=config_title,
                 )
 
@@ -378,7 +379,7 @@ def run_pgd_test(
             feats_adv   = _extract_features(model, all_adv_linf, training_params.batch_size, device)
 
             if training_params.plot:
-                plot_tsne(feats_clean, feats_adv, all_labels, out_dir="results/resnet", title=config_title)
+                plot_tsne(feats_clean, feats_adv, all_labels, out_dir=f"results/{model_params.model}", title=config_title)
 
     return results
 

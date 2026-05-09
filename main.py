@@ -229,8 +229,10 @@ def main() -> None:
     print(f"Using device: {device}")
 
     if model_params.transfer_mode != "none":
+        actual_img_size = (data_params.voc_image_size
+                           if data_params.dataset.startswith("voc") else 32)
         model = build_pretrained_model(
-            model_params, data_params.num_classes, data_params.voc_image_size
+            model_params, data_params.num_classes, actual_img_size
         ).to(device)
     else:
         model = build_model(data_params, model_params).to(device)
@@ -243,8 +245,11 @@ def main() -> None:
     if training_params.count_flops:
         try:
             from ptflops import get_model_complexity_info
+            in_ch  = 1 if data_params.dataset == "mnist" else 3
+            in_hw  = 28 if data_params.dataset == "mnist" else (
+                     data_params.voc_image_size if data_params.dataset.startswith("voc") else 32)
             macs, params = get_model_complexity_info(
-                model, (3, 32, 32), as_strings=True, print_per_layer_stat=False, verbose=False,
+                model, (in_ch, in_hw, in_hw), as_strings=True, print_per_layer_stat=False, verbose=False,
             )
             logger._w(f"\nModel complexity — MACs: {macs}  |  Params: {params}\n")
         except ImportError:
@@ -285,7 +290,8 @@ def main() -> None:
 
     if training_params.test_cifar10c:
         run_cifar10c_test(model, data_params, training_params, device,
-                          clean_acc=clean_acc, config_title=config_title)
+                          clean_acc=clean_acc, config_title=config_title,
+                          model_name=model_params.model)
 
     if training_params.pgd:
         if not training_params.model_path:

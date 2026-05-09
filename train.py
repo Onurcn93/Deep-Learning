@@ -148,6 +148,9 @@ def get_augmix_loaders(
     Returns:
         Tuple of ``(augmix_train_loader, val_loader)``.
     """
+    assert data_params.dataset == "cifar10", \
+        f"AugMix only supports cifar10, got '{data_params.dataset}'"
+
     mean, std = data_params.mean, data_params.std
     resize = [transforms.Resize(224)] if transfer_mode == "resizeFreeze" else []
 

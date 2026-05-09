@@ -17,15 +17,15 @@ This repository structure and implementation logic are based on the [Deep Learni
 | MLP | `--model mlp` | MNIST, CIFAR-10 | Configurable depth, ReLU/GELU, BatchNorm, Dropout |
 | CNN | `--model cnn` | MNIST, CIFAR-10 | LeNet-style (MNIST) / SimpleCNN with Kaiming init (CIFAR-10) |
 | VGG | `--model vgg` | CIFAR-10 | VGG-11/13/16/19 with BatchNorm |
-| ResNet | `--model resnet` | CIFAR-10, VOC | Configurable blocks (default: ResNet-18) |
-| ResNet-18 pretrained | `--transfer_mode resizeFreeze` | CIFAR-10 | ImageNet weights, resize to 224, frozen backbone |
-| ResNet-18 pretrained | `--transfer_mode modifyFinetune` | CIFAR-10, VOC | ImageNet weights, full fine-tune; adapted stem for 32×32, original stem for 224×224 |
-| MobileNetV2 | `--model mobilenet` | CIFAR-10 | Inverted residuals, stride-1 stem for 32×32 |
-| DenseNet-169 | `--model densenet` | CIFAR-10, VOC | Dense connections; 1664-dim feature vector; adapted stem for 32×32 |
-| DenseNet-169 pretrained | `--model densenet --transfer_mode resizeFreeze` | CIFAR-10, VOC | ImageNet weights, frozen backbone, replaced classifier |
-| DenseNet-169 pretrained | `--model densenet --transfer_mode modifyFinetune` | CIFAR-10, VOC | ImageNet weights, full fine-tune; adapted stem for 32×32, original stem for 224×224 |
+| ResNet | `--model resnet` | CIFAR-10, VOC, VOC-person | Configurable blocks (default: ResNet-18) |
+| ResNet-18 pretrained | `--transfer_mode resizeFreeze` | CIFAR-10, VOC, VOC-person | ImageNet weights, resize to 224, frozen backbone |
+| ResNet-18 pretrained | `--transfer_mode modifyFinetune` | CIFAR-10, VOC, VOC-person | ImageNet weights, full fine-tune; adapted stem for 32×32, original stem for 224×224 |
+| MobileNetV2 | `--model mobilenet` | CIFAR-10, VOC, VOC-person | Inverted residuals, stride-1 stem; AdaptiveAvgPool makes it resolution-independent |
+| DenseNet-169 | `--model densenet` | CIFAR-10, VOC, VOC-person | Dense connections; 1664-dim feature vector; adapted stem for 32×32 |
+| DenseNet-169 pretrained | `--model densenet --transfer_mode resizeFreeze` | CIFAR-10, VOC, VOC-person | ImageNet weights, frozen backbone, replaced classifier |
+| DenseNet-169 pretrained | `--model densenet --transfer_mode modifyFinetune` | CIFAR-10, VOC, VOC-person | ImageNet weights, full fine-tune; adapted stem for 32×32, original stem for 224×224 |
 | EfficientNet-B3 | `--model efficientnet` | CIFAR-10, VOC | Compound-scaled MBConv blocks; 1536-dim feature vector; adapted stride-1 stem for 32×32 |
-| EfficientNet-B3 pretrained | `--model efficientnet --transfer_mode resizeFreeze` | CIFAR-10, VOC | ImageNet weights, frozen backbone, replaced classifier |
+| EfficientNet-B3 pretrained | `--model efficientnet --transfer_mode resizeFreeze` | CIFAR-10, VOC, VOC-person | ImageNet weights, frozen backbone, replaced classifier |
 | EfficientNet-B3 pretrained | `--model efficientnet --transfer_mode modifyFinetune` | CIFAR-10, VOC | ImageNet weights, full fine-tune; adapted stride-1 stem for 32×32, original stem for 224×224 |
 
 ### Object Detection (`train_yolo.py` / `test_yolo.py`)
@@ -39,7 +39,7 @@ This repository structure and implementation logic are based on the [Deep Learni
 ## Features
 
 ### Training
-- **Multi-dataset**: MNIST, CIFAR-10, and PASCAL VOC 2012 (auto-downloaded)
+- **Multi-dataset**: MNIST, CIFAR-10, and PASCAL VOC 2012 (auto-downloaded); includes `voc_person` — a binary person/no-person split of VOC using `VOCBinaryClassification`
 - **Optimiser**: Adam with L1 + L2 regularisation and early stopping
 - **LR schedulers**: StepLR, CosineAnnealingLR, linear warmup (`--warmup_epochs`)
 - **Label smoothing**: configurable epsilon on CrossEntropyLoss (`--label_smoothing`)
@@ -103,12 +103,13 @@ Upload image (JPEG/PNG)
               "class_name": "person", "confidence": 0.87 }],
   "bbox_image_b64":    "data:image/png;base64,...",
   "gradcam_b64":       "data:image/png;base64,...",
-  "top_class":         "person",
-  "yolo_confidence":   0.87,
-  "resnet_confidence": 0.91
+  "top_class":          "person",
+  "yolo_confidence":    0.87,
+  "resnet_confidence":  0.91,
+  "ensemble_confidence": 0.89
 }
 ```
-`resnet_confidence` is `null` when the ResNet model is not loaded, or a float ≥ 0.0 when it ran.
+`resnet_confidence` is `null` when the ResNet model is not loaded. `ensemble_confidence` is the mean of all available non-zero confidences (YOLO + ResNet).
 
 #### Frontend data flow
 
@@ -284,7 +285,7 @@ python test_yolo.py --model_path weights/yolo_best.pth --img_size 320
 | Argument | Default | Description |
 |----------|---------|-------------|
 | `--voc_dir` | `./data/VOC` | Root directory for VOCdevkit (auto-downloaded) |
-| `--voc_image_size` | `224` | Resize target for VOC images (use 224 for pretrained ResNet) |
+| `--voc_image_size` | `224` | Resize target for input images; use `224` for pretrained backbones on VOC, `32` when using transfer learning on CIFAR-10 |
 
 ---
 
@@ -478,10 +479,10 @@ Deep-Learning/
 │   ├── scripts.js      # Upload → POST /api/inference → swap img src + update metrics
 │   └── server.py       # Flask backend — loads YOLO + ResNet, draws boxes, GradCAM overlay
 ├── results/
-│   ├── resnet/         # Classification outputs: loss curves, confusion matrix, GradCAM, t-SNE
-│   ├── densenet/       # DenseNet-169 classification outputs
-│   ├── efficientnet/   # EfficientNet-B3 classification outputs
-│   └── yolo/           # Detection outputs: training loss curve
+│   ├── resnet/         # Pre-created (.gitkeep) — loss curves, confusion matrix, GradCAM, t-SNE
+│   ├── densenet/       # Pre-created (.gitkeep)
+│   ├── yolo/           # Pre-created (.gitkeep) — detection training loss curve
+│   └── <model>/        # Created on first --plot run for any other model (mlp, cnn, vgg, …)
 ├── weights/            # Gitignored — trained model checkpoints
 │   ├── best_model.pth
 │   ├── best_model_finetune.pth
@@ -503,7 +504,7 @@ Deep-Learning/
 - numpy >= 1.24
 - matplotlib >= 3.7
 - ptflops >= 0.7 *(for `--count_flops`)*
-- seaborn *(optional — nicer confusion matrix and heatmaps)*
-- scikit-learn *(optional — `--tsne`)*
+- seaborn *(required for `--plot` CIFAR-10-C heatmap; optional for confusion matrix styling)*
+- scikit-learn *(required for `--tsne`)*
 - Pillow *(bundled with torchvision — used for Grad-CAM overlay resizing)*
 - flask >= 3.0 *(for `ui/server.py` inference dashboard)*
