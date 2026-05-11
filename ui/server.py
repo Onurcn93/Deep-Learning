@@ -132,9 +132,8 @@ def inference():
         conf = float(probs[person_idx])
 
         result['resnet_confidence'] = round(conf, 3)
-        if result['top_class'] == '—':
-            result['top_class'] = (RESNET_CLASSES[pred_cls]
-                                   if pred_cls < len(RESNET_CLASSES) else str(pred_cls))
+        if result['top_class'] == '—' and conf >= 0.5:
+            result['top_class'] = 'person'
 
         result['gradcam_b64'] = _overlay_gradcam(pil_orig, heatmap)
 
