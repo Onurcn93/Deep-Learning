@@ -243,7 +243,7 @@ def _roc_points(probs: np.ndarray, labels: np.ndarray):
         fprs.append(fp_ / (n_neg + 1e-9))
     fprs = np.array([0.0] + fprs + [1.0])
     tprs = np.array([0.0] + tprs + [1.0])
-    auc  = float(np.trapz(tprs, fprs))
+    auc  = float(np.trapezoid(tprs, fprs))
     return fprs, tprs, auc
 
 
@@ -264,7 +264,7 @@ def _pr_points(probs: np.ndarray, labels: np.ndarray):
     # sort by recall for proper integration
     idx        = np.argsort(recalls)
     recalls, precisions = recalls[idx], precisions[idx]
-    ap = float(np.trapz(precisions, recalls))
+    ap = float(np.trapezoid(precisions, recalls))
     return recalls, precisions, ap
 
 
