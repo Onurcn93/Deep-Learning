@@ -115,6 +115,10 @@ class TrainLogger:
                 f"  |  Checkpoint: {save_path}")
         self._w()
 
+    def log(self, msg: str = '') -> None:
+        """Generic single-line log — prints to terminal and writes to file."""
+        self._w(msg)
+
     def close(self) -> None:
         if self._file:
             self._file.close()

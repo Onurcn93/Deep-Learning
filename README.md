@@ -1,6 +1,6 @@
 # Deep Learning Framework
 
-A personal PyTorch framework for training and evaluating deep learning models on image classification and object detection benchmarks. Built iteratively — from basic MLPs to adversarial robustness and YOLOv8 object detection.
+A personal PyTorch framework for training and evaluating deep learning models across three domains: image classification, object detection, and financial time-series forecasting. Built iteratively — from basic MLPs to adversarial robustness, YOLOv8 object detection, and multi-stock LSTM/GRU return forecasting.
 
 ## Acknowledgements
 
@@ -33,6 +33,15 @@ This repository structure and implementation logic are based on the [Deep Learni
 | Model | Script | Dataset | Notes |
 |-------|--------|---------|-------|
 | YOLOv8n | `train_yolo.py` | PASCAL VOC 2012 | ResNet50 (ImageNet) backbone + PANet + anchor-free heads; 25.55M params |
+
+### Financial Forecasting (`forecaster/run.py`)
+
+| Model | Flag | Task | Notes |
+|-------|------|------|-------|
+| StockLSTM | `--model lstm` | Regression | Stacked LSTM → Dropout → FC; predicts d-day return ratios for d = 1…5; 201K params |
+| StockGRU | `--model gru` | Regression | Identical structure with GRU cells; fewer parameters than LSTM (~151K) |
+| Bidirectional LSTM | `--model lstm --task d` | Classification | Bidirectional LSTM for binary buy/pass signal detection |
+| Bidirectional GRU | `--model gru --task d` | Classification | Bidirectional GRU for binary buy/pass signal detection |
 
 ---
 
@@ -127,6 +136,51 @@ Upload image (JPEG/PNG)
 | **Inference** | Image viewer with GradCAM/Bbox toggle; YOLO confidence, ResNet-18 P(person), top class, detected class chips |
 | **Model Status** | Per-model stat cards: mAP@0.5, val accuracy, param count, MACs, checkpoint name |
 | **Config** | Training hyperparameter reference for both YOLOv8n and ResNet-18 |
+
+### Financial Forecasting (`forecaster/`)
+
+A complete pipeline for multi-stock, multi-horizon equity return forecasting using recurrent neural networks. Market data is sourced automatically from the Yahoo Finance API via `yfinance` — no manual download required.
+
+**Data pipeline**
+- Daily OHLC (Open, High, Low, Close, F = 4) for configurable S&P 500 tickers (default: AAPL, MSFT, GOOGL) over January 2020 – December 2025
+- Chronological train / val / test split: Jan 2020 – Jul 2024 / Aug – Dec 2024 / Jan – Dec 2025
+- Per-stock z-score normalisation fit on the train portion only; return-ratio targets are computed from raw prices before normalisation to prevent leakage
+- Sliding-window pairs: input `(T = 20, F = 4)` normalised OHLC → output `(D = 5,)` return ratios; raw downloads cached as `.npy` files to avoid repeated API calls
+
+**Three forecasting modes**
+
+| Mode | Flag | Target | Loss |
+|------|------|--------|------|
+| Exact returns | `--task b` | `(p^{t+d} − p^t) / p^t` for d = 1…5 | MSE |
+| Rolling average | `--task c` | Uniform weighted average of prices around each horizon (window l = 3) | MSE |
+| Turning-point detection | `--task d` | Binary buy (1) / pass (0) — buy if max (High) price exceeds threshold γ on any d ∈ {1…5} | BCE |
+
+**Architecture**
+- `StockLSTM` / `StockGRU`: stacked recurrent layers (default: 2 layers, hidden = 128) → inter-layer Dropout → Dropout → FC head
+- Sub-task `d` automatically rebuilds the chosen cell type as a **bidirectional** model; FC input doubles to `hidden × 2`
+- All models accept input shape `(batch, T = 20, F = 4)` and output `(batch, D = 5)` for regression or `(batch, 1)` for classification
+
+**Training**
+- Optimiser: AdamW (lr = 1e-3, weight_decay = 1e-4)
+- Gradient clipping: max norm 1.0
+- Early stopping on val loss with configurable patience
+- Best checkpoint saved on lowest val loss; restored automatically before test evaluation
+
+**Evaluation**
+- Regression: per-horizon MSE and MAE table printed for d = 1…5 plus overall
+- Classification: accuracy, precision, recall, F1, and full confusion matrix counts
+
+**Plots** (`--plot`)
+
+| File | Description |
+|------|-------------|
+| `loss_curves.png` | Train vs val loss over epochs |
+| `horizon_mse.png` | MSE bar chart for d = 1…5 |
+| `predictions_d1.png` | Predicted vs actual return overlay for d = 1 |
+| `all_horizons.png` | All 3 stocks × all 5 horizons — twin y-axes (actual left, predicted right) so both curves are readable despite different magnitude ranges |
+| `pnl_d1.png` | Simulated compound P&L: model strategy vs buy-and-hold vs oracle; shaded profit/loss regions |
+
+---
 
 ### Robustness & Adversarial
 - **CIFAR-10-C** (`--test_cifar10c`): evaluates across all 19 corruption types × 5 severity levels; saves bar chart and heatmap
@@ -325,6 +379,45 @@ python test_yolo.py --model_path weights/yolo_best.pth --img_size 320
 | `--person_only` / `--no-person_only` | `True` | Evaluate person-only checkpoint (1 class) |
 | `--device` | `auto` | `auto`, `cuda`, `mps`, or `cpu` |
 
+### Financial Forecasting (`forecaster/run.py`)
+
+**Data & Task**
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--task` | `b` | Forecasting mode: `b` exact returns, `c` rolling-average returns, `d` turning-point detection |
+| `--tickers` | `AAPL MSFT GOOGL` | Space-separated S&P 500 ticker symbols |
+| `--T` | `20` | Lookback window length in trading days |
+| `--D` | `5` | Number of forecast horizons (d = 1 … D) |
+| `--rolling_l` | `3` | Rolling-average window size (task `c` only) |
+| `--gamma` | `0.10` | Buy-signal threshold as return ratio, e.g. `0.10` = 10% gain (task `d` only) |
+| `--cache_dir` | `forecaster/cache` | Directory for cached yfinance downloads |
+
+**Model**
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--model` | `lstm` | Recurrent cell type: `lstm` or `gru` |
+| `--hidden_size` | `128` | Hidden dimension of each recurrent layer |
+| `--num_layers` | `2` | Number of stacked recurrent layers |
+| `--dropout` | `0.2` | Dropout probability (inter-layer + pre-FC) |
+
+**Training**
+
+| Argument | Default | Description |
+|----------|---------|-------------|
+| `--epochs` | `100` | Maximum training epochs |
+| `--lr` | `1e-3` | AdamW learning rate |
+| `--weight_decay` | `1e-4` | AdamW weight decay |
+| `--batch_size` | `64` | Mini-batch size |
+| `--patience` | `15` | Early-stopping patience (epochs without val improvement) |
+| `--device` | `auto` | `auto`, `cuda`, `mps`, or `cpu` |
+| `--save_path` | `weights/stock_best.pth` | Path to save the best model checkpoint |
+| `--log` / `--no-log` | `True` | Save training log to `logs/` |
+| `--plot` | `False` | Save all figures to `results/<model>/` |
+
+---
+
 ### Inference Server (`ui/server.py`)
 
 | Argument | Default | Description |
@@ -343,7 +436,28 @@ python test_yolo.py --model_path weights/yolo_best.pth --img_size 320
 ## Examples
 
 ```bash
-# YOLOv8n — train on PASCAL VOC 2012 (recommended config for 6 GB GPU)
+# ── Financial Forecasting ──────────────────────────────────────────────────
+
+# StockLSTM — exact d-day returns (AAPL, MSFT, GOOGL), full training with plots
+python forecaster/run.py --task b --model lstm --epochs 100 --plot
+
+# StockGRU — exact d-day returns, separate checkpoint
+python forecaster/run.py --task b --model gru --epochs 100 --plot \
+                         --save_path weights/stock_gru_best.pth
+
+# Rolling-average targets (l = 3) — LSTM, compare MSE to exact-return run
+python forecaster/run.py --task c --model lstm --rolling_l 3 --epochs 100 --plot \
+                         --save_path weights/stock_lstm_rolling.pth
+
+# Turning-point detection — bidirectional LSTM, 10% gain threshold
+python forecaster/run.py --task d --model lstm --gamma 0.10 --epochs 100 --plot \
+                         --save_path weights/stock_bilstm_turning.pth
+
+# Custom tickers and larger hidden size
+python forecaster/run.py --task b --model lstm --tickers AAPL NVDA TSLA META \
+                         --hidden_size 256 --num_layers 3 --epochs 150 --plot
+
+# ── YOLOv8n — train on PASCAL VOC 2012 (recommended config for 6 GB GPU)
 python train_yolo.py --epochs 50 --lr 1e-3 --batch_size 8 --img_size 320 \
                      --weight_decay 5e-4 --eval_map_every 5 --device auto --plot
 
@@ -457,6 +571,13 @@ Deep-Learning/
 ├── test_yolo.py        # YOLOv8n mAP@0.5 evaluation on PASCAL VOC 2012 val
 ├── datasets/
 │   └── voc.py          # VOCClassification (single-label) + VOCDetectionDataset (bbox)
+├── forecaster/
+│   ├── __init__.py     # Package init
+│   ├── data.py         # yfinance download + cache, per-stock z-score norm, sliding-window Dataset, get_loaders()
+│   ├── parameters.py   # Forecaster argparse — task, model, T/D, training hyperparams
+│   ├── train.py        # train_one_epoch(), validate(), run_training() with early stopping
+│   ├── test.py         # run_test() — per-horizon MSE/MAE table (regression) + classification metrics
+│   └── run.py          # Entry point — data → model → train → test → plots
 ├── models/
 │   ├── MLP.py          # Multi-Layer Perceptron
 │   ├── CNN.py          # LeNet-style CNN (MNIST) / SimpleCNN (CIFAR-10)
@@ -465,9 +586,12 @@ Deep-Learning/
 │   ├── MobileNet.py    # MobileNetV2 with stride-1 stem for 32×32
 │   ├── DenseNet.py     # DenseNet-169 wrapper — pretrained/scratch, small_input stem adapt
 │   ├── EfficientNet.py # EfficientNet-B3 wrapper — pretrained/scratch, small_input stem adapt
-│   └── YOLO.py         # YOLOv8n — ResNet50 backbone + PANet + anchor-free heads
+│   ├── YOLO.py         # YOLOv8n — ResNet50 backbone + PANet + anchor-free heads
+│   ├── LSTM.py         # StockLSTM — stacked LSTM → Dropout → FC; bidirectional for task d
+│   └── GRU.py          # StockGRU  — stacked GRU  → Dropout → FC; bidirectional for task d
 ├── utils/
 │   ├── plot.py         # All figures: curves, confusion matrix, CIFAR-10-C, Grad-CAM, t-SNE
+│   ├── plot_stock.py   # Forecaster figures: loss curves, horizon MSE, all-horizons (twin-axis), P&L
 │   ├── logger.py       # Structured epoch table — terminal + logs/
 │   ├── gradcam.py      # Grad-CAM with forward/backward hooks (Selvaraju et al. 2017)
 │   ├── detection.py    # NMS, decode_predictions, compute_map (mAP@0.5)
@@ -482,6 +606,8 @@ Deep-Learning/
 │   ├── resnet/         # Pre-created (.gitkeep) — loss curves, confusion matrix, GradCAM, t-SNE
 │   ├── densenet/       # Pre-created (.gitkeep)
 │   ├── yolo/           # Pre-created (.gitkeep) — detection training loss curve
+│   ├── lstm/           # Pre-created (.gitkeep) — forecaster plots (loss, MSE, all_horizons, pnl)
+│   ├── gru/            # Pre-created (.gitkeep) — forecaster plots
 │   └── <model>/        # Created on first --plot run for any other model (mlp, cnn, vgg, …)
 ├── weights/            # Gitignored — trained model checkpoints
 │   ├── best_model.pth
@@ -489,8 +615,10 @@ Deep-Learning/
 │   ├── best_model_augmix.pth
 │   ├── best_model_person.pth
 │   ├── yolo_best.pth
+│   ├── stock_best.pth          # StockLSTM / StockGRU best checkpoint (task b/c/d)
 │   └── weights_summary.txt
 ├── teachers/           # Gitignored — place teacher .pth weights here
+├── forecaster/cache/   # Gitignored — yfinance raw OHLC cache (.npy files)
 └── requirements.txt
 ```
 
@@ -508,3 +636,4 @@ Deep-Learning/
 - scikit-learn *(required for `--tsne`)*
 - Pillow *(bundled with torchvision — used for Grad-CAM overlay resizing)*
 - flask >= 3.0 *(for `ui/server.py` inference dashboard)*
+- yfinance >= 0.2 *(for `forecaster/` — auto-downloads OHLC market data)*

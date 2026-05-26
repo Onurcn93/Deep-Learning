@@ -1,4 +1,5 @@
 data/
+forecaster/cache/
 models/__pycache__/
 weights/best_model.pth
 weights/best_model_finetune.pth
