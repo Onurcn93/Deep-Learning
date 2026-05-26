@@ -131,6 +131,11 @@ def main():
     args   = get_args()
     device = _resolve_device(args.device)
 
+    # ── Auto save_path: derive from model+task if user left the default ───────
+    #    Prevents task b and task c checkpoints overwriting each other.
+    if args.save_path == 'weights/stock_best.pth':
+        args.save_path = f'weights/stock_{args.model}_task{args.task}_best.pth'
+
     # ── Logger ────────────────────────────────────────────────────────────────
     logger = None
     if args.log:
@@ -182,7 +187,7 @@ def main():
             plot_loss_curves, plot_horizon_mse, plot_predictions,
             plot_all_horizons, plot_pnl,
         )
-        save_dir = os.path.join('results', args.model)
+        save_dir = os.path.join('results', args.model, f'task{args.task}')
         label    = f'Stock{args.model.upper()} | task={args.task}'
 
         plot_loss_curves(train_losses, val_losses, save_dir, title=f'{label} Loss')
