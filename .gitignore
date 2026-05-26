@@ -6,6 +6,7 @@ weights/best_model_finetune.pth
 weights/best_model_augmix.pth
 weights/best_model_person.pth
 weights/yolo_best.pth
+weights/stock_*.pth
 __pycache__/
 .claude/
 plots/

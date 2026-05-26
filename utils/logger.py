@@ -116,8 +116,10 @@ class TrainLogger:
         self._w()
 
     def log(self, msg: str = '') -> None:
-        """Generic single-line log — prints to terminal and writes to file."""
-        self._w(msg)
+        """Write msg to log file only — caller is responsible for terminal print."""
+        if self.enabled and self._file:
+            self._file.write(msg + '\n')
+            self._file.flush()
 
     def close(self) -> None:
         if self._file:

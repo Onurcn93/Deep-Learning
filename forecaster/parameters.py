@@ -44,13 +44,13 @@ def get_args():
                    help='Dropout probability (inter-layer + pre-FC)')
 
     # ── Training ──────────────────────────────────────────────────────────────
-    p.add_argument('--epochs', type=int, default=100)
+    p.add_argument('--epochs', type=int, default=200)
     p.add_argument('--lr', type=float, default=1e-3,
                    help='AdamW learning rate')
     p.add_argument('--weight_decay', type=float, default=1e-4,
                    help='AdamW weight decay')
     p.add_argument('--batch_size', type=int, default=64)
-    p.add_argument('--patience', type=int, default=15,
+    p.add_argument('--patience', type=int, default=40,
                    help='Early-stopping patience (epochs without val improvement)')
     p.add_argument('--device', default='auto',
                    help='Device: auto | cpu | cuda | mps')
