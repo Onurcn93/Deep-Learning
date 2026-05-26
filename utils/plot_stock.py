@@ -184,6 +184,137 @@ def plot_all_horizons(
     _save(fig, os.path.join(save_dir, 'all_horizons.png'))
 
 
+def plot_confusion_matrix_d(
+    tp       : int,
+    fp       : int,
+    tn       : int,
+    fn       : int,
+    save_dir : str,
+    title    : str = 'Confusion Matrix — Turning-Point Detection',
+) -> None:
+    """
+    2×2 confusion matrix heatmap for sub-task d (binary buy/pass).
+
+    Rows = actual class, Columns = predicted class.
+    Each cell shows count and row-normalised percentage.
+    """
+    cm = np.array([[tn, fp],
+                   [fn, tp]], dtype=float)
+
+    # Row-normalise for colour intensity (so rare positive class is still visible)
+    row_sums = cm.sum(axis=1, keepdims=True)
+    cm_norm  = np.where(row_sums > 0, cm / row_sums, 0.0)
+
+    fig, ax = plt.subplots(figsize=(5, 4))
+    im = ax.imshow(cm_norm, cmap='Blues', vmin=0, vmax=1)
+    plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04, label='Row proportion')
+
+    classes = ['Pass (0)', 'Buy (1)']
+    ax.set_xticks([0, 1]); ax.set_yticks([0, 1])
+    ax.set_xticklabels(classes); ax.set_yticklabels(classes)
+    ax.set_xlabel('Predicted label')
+    ax.set_ylabel('Actual label')
+    ax.set_title(title)
+
+    # Annotate each cell with count + percentage
+    for r in range(2):
+        for c in range(2):
+            count = int(cm[r, c])
+            pct   = cm_norm[r, c] * 100
+            color = 'white' if cm_norm[r, c] > 0.55 else 'black'
+            ax.text(c, r, f'{count}\n({pct:.1f}%)',
+                    ha='center', va='center', color=color, fontsize=11)
+
+    fig.tight_layout()
+    _save(fig, os.path.join(save_dir, 'confusion_matrix.png'))
+
+
+def _roc_points(probs: np.ndarray, labels: np.ndarray):
+    """Compute ROC curve (FPR, TPR) and AUC via numpy — no sklearn needed."""
+    thresholds = np.linspace(1.0, 0.0, 300)
+    n_pos = labels.sum()
+    n_neg = len(labels) - n_pos
+    fprs, tprs = [], []
+    for t in thresholds:
+        pred = (probs >= t).astype(int)
+        tp_  = ((pred == 1) & (labels == 1)).sum()
+        fp_  = ((pred == 1) & (labels == 0)).sum()
+        tprs.append(tp_ / (n_pos + 1e-9))
+        fprs.append(fp_ / (n_neg + 1e-9))
+    fprs = np.array([0.0] + fprs + [1.0])
+    tprs = np.array([0.0] + tprs + [1.0])
+    auc  = float(np.trapz(tprs, fprs))
+    return fprs, tprs, auc
+
+
+def _pr_points(probs: np.ndarray, labels: np.ndarray):
+    """Compute PR curve (Recall, Precision) and Average Precision."""
+    thresholds = np.linspace(1.0, 0.0, 300)
+    n_pos = labels.sum()
+    recalls, precisions = [], []
+    for t in thresholds:
+        pred = (probs >= t).astype(int)
+        tp_  = ((pred == 1) & (labels == 1)).sum()
+        fp_  = ((pred == 1) & (labels == 0)).sum()
+        fn_  = ((pred == 0) & (labels == 1)).sum()
+        precisions.append(tp_ / (tp_ + fp_ + 1e-9))
+        recalls.append(   tp_ / (n_pos     + 1e-9))
+    recalls    = np.array([0.0] + recalls    + [1.0])
+    precisions = np.array([1.0] + precisions + [float(n_pos / len(labels))])
+    # sort by recall for proper integration
+    idx        = np.argsort(recalls)
+    recalls, precisions = recalls[idx], precisions[idx]
+    ap = float(np.trapz(precisions, recalls))
+    return recalls, precisions, ap
+
+
+def plot_roc_pr_d(
+    probs    : np.ndarray,   # (N,) sigmoid probabilities
+    labels   : np.ndarray,   # (N,) int {0,1}
+    save_dir : str,
+    title    : str = 'ROC & Precision-Recall — Turning-Point Detection',
+) -> None:
+    """
+    Side-by-side ROC curve (left) and Precision-Recall curve (right).
+
+    Both computed from scratch with numpy — no sklearn dependency.
+    ROC AUC and Average Precision are annotated on each subplot.
+    The random-classifier baseline is shown as a dashed reference line.
+    """
+    fprs, tprs, auc = _roc_points(probs, labels)
+    recs, precs, ap = _pr_points(probs, labels)
+    base_rate        = float(labels.mean())   # fraction of positives
+
+    fig, axes = plt.subplots(1, 2, figsize=(11, 4.5))
+
+    # ── ROC ──────────────────────────────────────────────────────────────────
+    ax = axes[0]
+    ax.plot(fprs, tprs, linewidth=2, label=f'LSTM/GRU  (AUC={auc:.3f})')
+    ax.plot([0, 1], [0, 1], 'k--', linewidth=1, alpha=0.5, label='Random')
+    ax.set_xlabel('False Positive Rate')
+    ax.set_ylabel('True Positive Rate')
+    ax.set_title('ROC Curve')
+    ax.legend(fontsize=9)
+    ax.grid(True, alpha=0.25)
+
+    # ── PR ───────────────────────────────────────────────────────────────────
+    ax = axes[1]
+    ax.plot(recs, precs, linewidth=2, color='darkorange',
+            label=f'LSTM/GRU  (AP={ap:.3f})')
+    ax.axhline(base_rate, color='k', linestyle='--', linewidth=1, alpha=0.5,
+               label=f'Random  ({base_rate:.3f})')
+    ax.set_xlabel('Recall')
+    ax.set_ylabel('Precision')
+    ax.set_title('Precision-Recall Curve')
+    ax.legend(fontsize=9)
+    ax.grid(True, alpha=0.25)
+    ax.set_ylim([0, 1.05])
+
+    fig.suptitle(title, fontsize=11)
+    fig.tight_layout()
+    _save(fig, os.path.join(save_dir, 'roc_pr.png'))
+
+
 def plot_pnl(
     preds    : np.ndarray,   # (N, D)
     labels   : np.ndarray,   # (N, D)

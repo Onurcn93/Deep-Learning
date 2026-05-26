@@ -186,6 +186,7 @@ def main():
         from utils.plot_stock import (
             plot_loss_curves, plot_horizon_mse, plot_predictions,
             plot_all_horizons, plot_pnl,
+            plot_confusion_matrix_d, plot_roc_pr_d,
         )
         save_dir = os.path.join('results', args.model, f'task{args.task}')
         label    = f'Stock{args.model.upper()} | task={args.task}'
@@ -204,6 +205,16 @@ def main():
             plot_pnl(results['preds'], results['labels'],
                      tickers=args.tickers, save_dir=save_dir, horizon=1,
                      title=f'{label} Cumulative P&L')
+
+        if args.task == 'd':
+            plot_confusion_matrix_d(
+                results['tp'], results['fp'], results['tn'], results['fn'],
+                save_dir, title=f'{label} Confusion Matrix',
+            )
+            plot_roc_pr_d(
+                results['probs'], results['labels_np'],
+                save_dir, title=f'{label} ROC & Precision-Recall',
+            )
 
 
 if __name__ == '__main__':

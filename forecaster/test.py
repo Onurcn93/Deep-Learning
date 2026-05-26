@@ -120,6 +120,9 @@ def run_test(
             accuracy=accuracy, precision=precision,
             recall=recall, f1=f1,
             tp=tp, fp=fp, tn=tn, fn=fn,
+            # raw arrays for ROC / PR curve plotting
+            probs     = probs.numpy(),
+            labels_np = labels_i.numpy(),
         ))
 
     return results
