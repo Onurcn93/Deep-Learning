@@ -36,6 +36,15 @@ best_model_person.pth
                    --epochs 20 --lr 1e-4 --batch_size 32 --scheduler cosine \
                    --save_path weights/best_model_person.pth --device auto --plot
 
+Communication Protocol (comm/run.py)
+--------------------------------------
+comm_best.pth
+  Transformer TX+RX — Interactive AWGN comm protocol.
+  m ∈ {1..8}^4, T=4 rounds, σ²=0.25 | d_model=64, 2 layers, 4 heads
+  Metric: Symbol Error Rate (SER) + Message Error Rate (MER)
+  Run:
+    python comm/run.py --plot
+
 Object Detection (train_yolo.py / VOC)
 ----------------------------------------
 yolo_best.pth
